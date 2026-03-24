@@ -1,0 +1,7 @@
+scapy
+netifaces
+pyfiglet
+requests
+ipaddress
+requests
+rich
