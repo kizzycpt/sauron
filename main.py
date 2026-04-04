@@ -38,7 +38,7 @@ PORT_PROTOCOLS = {
     53: "DNS",
     80: "HTTP",
     110: "POP3",
-    135: 'RPC",
+    135: "RPC",
     139: "NetBIOS",
     143: "IMAP",
     443: "HTTPS",

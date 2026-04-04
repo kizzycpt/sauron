@@ -1,6 +1,10 @@
-Class IDS:
+class IDS:
     
-    
+    def hostname_for(ip):
+        try:
+            return socket.gethostbyaddr(ip)[0]
+        except Exception:
+            return Nones
     
     def os_guess_for(ip):
             if not getattr(args, "os_scan", False):
