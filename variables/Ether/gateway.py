@@ -1,4 +1,4 @@
-import netifaces
+import netifaces as net
 import ipaddress
 import requests
 
@@ -17,7 +17,7 @@ class Gateway:
         self.public_ip = requests.get('https://api.ipfy.org',timeout=3).read_text
 
     def get_network_info():
-            return {"local_ip": self.addr, "gateway": self.gw_ip, "subnet": self.cidr, "public_ip": self.public_ip}
+            return {"local_ip": self.addr, "gateway": self.gw_ip, "subnet": self.cidr}
 
 
 Network = Gateway()

@@ -44,5 +44,7 @@ class Broadcast:
 
 ARP = Broadcast()
 
+ARP_SCAN = ARP.scan
+
 
 
