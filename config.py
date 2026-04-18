@@ -24,7 +24,6 @@ REPORTS_DIR = LOG_DIR / "reports"
 
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-
 baseline_file = BASE_DIR/ "state.json"
 
 alerts_file = LOG_DIR / "alerts.log"
