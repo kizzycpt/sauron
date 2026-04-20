@@ -428,11 +428,9 @@ class FirewallLogParser:
 
 
 
-
-
     def parse_linux_log_line(self, line):
         try:
-            if "UFW" in line and "BLOCK" in line:
+            if "UFW" in line and ("BLOCK" in line or "DROP" in line):
                 entry = {}
                 if "SRC=" in line:
                     s = line.index("SRC=") + 4
@@ -444,14 +442,31 @@ class FirewallLogParser:
                 if "PROTO=" in line:
                     s = line.index("PROTO=") + 6
                     entry["protocol"] = line[s:line.index(" ", s)]
-                entry["action"]    = "DROP"
-                entry["timestamp"] = " ".join(line.split()[0:3])
+                    entry["action"]    = "DROP"
+                    entry["timestamp"] = " ".join(line.split()[0:3])
                 if "src_ip" in entry and "dst_port" in entry:
                     entry.setdefault("dst_ip", "Unknown")
                     return entry
+                if "IN=" in line and "SRC=" in line and ("DROP" in line or "BLOCK" in line):
+                    entry = {"action": "DROP", "timestamp": " ".join(line.split()[0:3])}
+                if "SRC=" in line:
+                    s = line.index("SRC=") + 4
+                    entry["src_ip"] = line[s:line.index(" ", s)]
+                if "DPT=" in line:
+                    s = line.index("DPT=") + 4
+                    e = line.find(" ", s)
+                    entry["dst_port"] = line[s:] if e == -1 else line[s:e]
+                if "PROTO=" in line:
+                    s = line.index("PROTO=") + 6
+                    entry["protocol"] = line[s:line.index(" ", s)]
+                else:
+                    entry["protocol"] = "TCP"
+                entry.setdefault("dst_ip", "Unknown")
+                if "src_ip" in entry and "dst_port" in entry:
+                    return entry
         except Exception:
             pass
-        return None
+            return None
 
 
 
@@ -507,7 +522,7 @@ class FirewallLogParser:
 
     def tail_file(self):
         try:
-            if self.log_path == journalctl":
+            if self.log_path == "journalctl":
                 return
             if not Path(self.log_path):
                 return
@@ -1108,7 +1123,7 @@ class Dashboard:
     # ── Firewall log verification ─────────────
     def _verify_firewall_logging_active(self):
         path = self.log_parser.log_path
-        if not Path(path):
+        if not Path(str(path)).exists():
             return False
         try:
             st  = os.stat(path)

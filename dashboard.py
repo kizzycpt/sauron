@@ -1229,7 +1229,7 @@ class Dashboard:
 
     def _verify_firewall_logging_active(self):
         """Verify that firewall logging is actually active (not just file exists)"""
-        if not os.path.exists(self.log_parser.log_path):
+        if not Path(self.log_parser.log_path):
             return False
 
         try:
