@@ -1,57 +1,36 @@
 from scapy.all import *
- 
+
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+from gateway import NetInfo
+
 class Broadcast:
-    
-    #Constructor
-    def __init__(self):
-        self.gateway = conf.route.route("0.0.0.0")[2]
-        self.mask = "0" #adjust
-
-
-    #ARP Broadcast on entire subnet
     def scan(self, subnet: str | None = None, *, quiet: bool = False) -> dict[str, str]:
         try:
-            subnet = str(f"{self.gateway}/{self.mask}")
+            if subnet is None:
+                subnet = f"{NetInfo.get('gateway')}/24"
 
-            arp = ARP(pdst = subnet)
-            ether = Ether(dst = "ff:ff:ff:ff:ff:ff")
-            
-            #Packet Craft under layer 2
-            packet = ether/arp
+            arp = ARP(pdst=subnet)
+            ether = Ether(dst="ff:ff:ff:ff:ff:ff")
+            packet = ether / arp
 
-
-
-            #Packet transmission and reply
             try:
-                result = srp(packet, timeout = 2, verbose = 1)[0]
-
-                
-                #Dictionary creation and reply storage
+                result = srp(packet, timeout=2, verbose=0)[0]
                 hosts: dict[str, str] = {}
                 for _, received in result:
                     if not quiet:
-                        print(f"Host found: {received.psrc} - MAC: {received.hwsrc} \n")
+                        print(f"Host found: {received.psrc} - MAC: {received.hwsrc}\n")
                     hosts[received.psrc] = received.hwsrc
                 return hosts
 
-
             except PermissionError:
-                print("Scapy needs raw-socket permission for ARP if you're using linux. Please try again")
-                print("Run with sudo or grant CAP_NET_RAW/CAP_NET_ADMIN to the terminal")
+                print("Scapy needs raw-socket access. Run with sudo or grant CAP_NET_RAW.")
                 return {}
-           
-        
-        except Exception as e:
-            print(f"ARP scan error: {e}") 
+
+        except OSError as e:
+            print(f"ARP scan error: {e}")
             return {}
 
-
-#instances
 l2_arp = Broadcast()
+arp_scan = l2_arp.scan
 
-#---
-arp_scan = l2_arp.scan()
-
-
-
- 

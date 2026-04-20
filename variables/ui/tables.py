@@ -1,9 +1,9 @@
 from variables.ether.gateway import Network, NetInfo
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from variables.ether.L2 import arp_scan as scan_arp
+from variables.ether.L2 import arp_scan
 from variables.nodeinfo.os import OperatingSystem, os_guess, os_hint, os_scan
-from variables.ether.ports import port, open_ports
+from variables.ether.ports import port, open_ports_for
 from variables.ether.mac import MAC, gateway_mac,my_mac
 from variables.nodeinfo.hostname import hostname
 from variables.utils.signals import install_sigint_handler
@@ -11,6 +11,7 @@ from variables.utils.signals import install_sigint_handler
 import socket
 import platform
 import sys
+import time
 
 from rich.console import Console
 from rich.table import Table as RichTable
@@ -21,11 +22,10 @@ console = Console()
 gw_mac = gateway_mac
 subnet = NetInfo.get("subnet")
 ports = port.ports or port.DEFAULT_PORTS
-resolve_hostname = hostname.resolve_hostname()
-open_ports_for = port.open_ports_for()
+resolve_hostname = hostname.resolve_hostname
+open_ports_for = open_ports_for
 os_guess_for_table = os_guess
 STOP_REQUESTED = install_sigint_handler(console)
-
 
 class Tables:
     @staticmethod
@@ -240,7 +240,7 @@ class Tables:
         subnet: str,
         ports: list[int],
         do_os_scan: bool,
-        scan_arp,
+        arp_scan,
         resolve_hostname,
         open_ports_for,
         os_guess_for_table,
@@ -272,7 +272,7 @@ class Tables:
 
         with Live(final_table, console=console, refresh_per_second=8, transient=False) as live:
             while not stop_requested():
-                discovered = scan_arp(console, subnet, quiet=True)
+                discovered = arp_scan(subnet, quiet=True)
                 targets = list(discovered.keys())
 
                 rows = []
@@ -286,7 +286,7 @@ class Tables:
                         pool.submit(open_ports_for, ip, ports): ip for ip in targets
                     }
                     os_futures = {
-                        pool.submit(os_guess_for_table, ip, enabled=do_os_scan): ip for ip in targets
+                        pool.submit(os_guess_for_table, ip): ip for ip in targets
                     }
 
                     hostname_results = {}
@@ -294,8 +294,9 @@ class Tables:
                     os_results = {}
 
                     for fut in as_completed(hostname_futures):
+                        
                         ip = hostname_futures[fut]
-                        hostname_results[ip] = fut.result() or "Unknown"
+                        hostname_results[ip] = fut.result() or "⚠️"
 
                     for fut in as_completed(ports_futures):
                         ip = ports_futures[fut]
@@ -303,7 +304,10 @@ class Tables:
 
                     for fut in as_completed(os_futures):
                         ip = os_futures[fut]
-                        os_results[ip] = fut.result() or "-"
+                        name, accuracy = fut.result()
+                        os_results[ip] = f"{name} ({accuracy}%)" if name else "-"
+
+
 
                 for ip in targets:
                     mac = discovered.get(ip, "-")
@@ -420,19 +424,7 @@ class Tables:
 
 
 
-#instances:
 
+#instances:
 console = Console()
 tables = Tables()
-
-live_table = tables.stream_arp_ports_live(
-                console=console,
-                subnet=subnet,
-                ports=ports,
-                do_os_scan=True,
-                scan_arp=scan_arp,
-                resolve_hostname=resolve_hostname,
-                open_ports_for=open_ports_for,
-                os_guess_for_table=os_guess_for_table,
-                stop_requested=lambda: STOP_REQUESTED,
-            )

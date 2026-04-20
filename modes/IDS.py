@@ -1,108 +1,231 @@
+import json
+import time
+import traceback
+from datetime import datetime
+from pathlib import Path
+
+from rich.console import Console
+
 from variables.Ether.gateway import Network, NetInfo
 from variables.Ether.L2 import ARP, ARP_SCAN
 from variables.Ether.ports import PortScan
+from variables.ui.tables import tables
+from variables.utils.signals import install_sigint_handler
+
+console = Console()
+LOG_FILE = Path("logs") / "ids.log"
+LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+DEFAULT_PORTS = PortScan.DEFAULT_PORTS if hasattr(PortScan, "DEFAULT_PORTS") else []
+
+
+def make_run_dir(root: Path) -> Path:
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    d = root / ts
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
 
 class IDS:
+    """Intrusion Detection System — network baseline monitor."""
 
-    #class variables
-    now = datetime.now()
-    now_iso = now.isoformat(timespec="seconds")
-    offline_this_run = []
+    BASELINE_FILE = Path("logs") / "ids_baseline.json"
 
-    root = Path(args.out)
-    root.mkdir(parents=True, exist_ok=True)
-    run_dir = make_run_dir(root)
-    devices_csv = run_dir / "devices.csv"
-    report_md = run_dir / "report.md"
+    def __init__(
+        self,
+        out: str = "ids_runs",
+        subnet: str | None = None,
+        ports: list[int] | None = None,
+        os_scan: bool = False,
+    ):
+        self.out      = out
+        self.subnet   = subnet or NetInfo.get("subnet")
+        self.ports    = ports or DEFAULT_PORTS
+        self.os_scan  = os_scan
+        self._stop    = install_sigint_handler(console)
 
-    baseline = {
-        "last_run_at": None,
-        "gateway_ip": None,
-        "gateway_mac": None,
-        "ip_to_mac": {},
-        "devices": {} 
-    }
-    subnet = NetInfo.get("subnet")
+        self._empty_baseline: dict = {
+            "last_run_at":  None,
+            "gateway_ip":   None,
+            "gateway_mac":  None,
+            "ip_to_mac":    {},
+            "devices":      {},
+        }
 
-    hosts = ARP_SCAN(console, subnet, quiet=False)
-    gw_ip = NetInfo.get("gateway")
-    gw_mac = hosts.get(NetInfo.get("gateway"))
+    # ── Baseline helpers ──────────────────────────────────────────────────
 
-    net_tbl = build_network_results_table(net_info, gw_mac=gw_mac)
-    print_and_log_table(console, net_tbl, LOG_FILE)
-
-    
-    
-    def run_ids_mode(args):
-        is_first_run = not baseline_file.exists()
-        if baseline_file.exists():
+    def _load_baseline(self) -> dict:
+        if self.BASELINE_FILE.exists():
             try:
-                baseline = json.loads(baseline_file.read_text())
+                return json.loads(self.BASELINE_FILE.read_text(encoding="utf-8"))
             except Exception:
                 pass
+        return dict(self._empty_baseline)
 
-    
+    def _save_baseline(self, baseline: dict) -> None:
+        self.BASELINE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self.BASELINE_FILE.write_text(
+            json.dumps(baseline, indent=2, default=str), encoding="utf-8"
+        )
 
-    def run_ids_once(self):
-        class A: pass
-        args = A()
-        args.subnet = subnet
-        args.out = str
-        args.os_scan = 
-        args.ports = PortScan
-        run_ids_mode(args)
+    # ── Single IDS run ────────────────────────────────────────────────────
 
-    
+    def run_once(self) -> dict:
+        """Run one IDS scan cycle. Returns the updated baseline."""
+        now     = datetime.now()
+        now_iso = now.isoformat(timespec="seconds")
 
-    def run_ids_loop(console: Console, every_hours: float = 6.0):
+        root    = Path(self.out)
+        root.mkdir(parents=True, exist_ok=True)
+        run_dir     = make_run_dir(root)
+        devices_csv = run_dir / "devices.csv"
+        report_md   = run_dir / "report.md"
 
-        interval  = float(every_hours) * 3600.0
-        start = datetime.now()
+        baseline      = self._load_baseline()
+        base_devs     = baseline.get("devices", {})
+        is_first_run  = not self.BASELINE_FILE.exists()
 
-        elpased = (now - start).total_seconds()
-        remaining = max(0.0, interval - elpased)
+        # ── ARP scan ─────────────────────────────────────────────────────
+        console.print(f"[cyan]Scanning {self.subnet} …[/cyan]")
+        hosts  = ARP_SCAN(console, self.subnet, quiet=False)
+        gw_ip  = NetInfo.get("gateway")
+        gw_mac = hosts.get(gw_ip)
 
-        end_time = time.time() + remaining
+        net_info = NetInfo.get_all() if hasattr(NetInfo, "get_all") else {}
+        net_tbl  = tables.build_network_results_table(net_info, gw_mac=gw_mac)
+        tables.print_and_log_table(console, net_tbl, LOG_FILE)
 
+        # ── Per-host enrichment ───────────────────────────────────────────
+        current_devices: dict = {}
+        alerts: list[str]     = []
+        offline_this_run: list[str] = []
 
-        class A: pass
-        args = A()
-        args.subnet = subnet
-        args out = str( )
-        
-        args.ports = None
+        opened_by_mac: dict = {}
+        closed_by_mac: dict = {}
 
+        for ip, mac in hosts.items():
+            from variables.nodeinfo.hostname import hostname as _hn
+            from variables.ether.ports import open_ports_for
+            from variables.nodeinfo.os import os_guess
 
-        console.print(f"[cyan]IDS loop started. It will run every {every_hours} hours.")
-        console.print("[cyan]Execute CTRL + C/Break to stop gracefully.[/cyan]")
+            host_name  = _hn.resolve_hostname(ip) or "Unknown"
+            open_ports = open_ports_for(ip, self.ports)
+            os_str     = "-"
+            if self.os_scan:
+                name, acc = os_guess(ip)
+                os_str = f"{name} ({acc}%)" if name else "-"
 
-        
+            prev       = base_devs.get(mac, {})
+            prev_ports = set(prev.get("open_ports", []))
+            cur_ports  = set(open_ports)
+
+            opened = sorted(cur_ports - prev_ports)
+            closed = sorted(prev_ports - cur_ports)
+            if opened:
+                opened_by_mac[mac] = opened
+                alerts.append(f"{now_iso} MEDIUM PORT_OPENED {mac} opened {opened}")
+            if closed:
+                closed_by_mac[mac] = closed
+
+            if mac not in base_devs and not is_first_run:
+                alerts.append(f"{now_iso} HIGH NEW_DEVICE {mac} ({ip}) first seen")
+
+            current_devices[mac] = {
+                "ips":        [ip],
+                "hostname":   host_name,
+                "open_ports": sorted(open_ports),
+                "os_guess":   os_str,
+                "last_seen":  now_iso,
+            }
+
+        # ── Offline detection ─────────────────────────────────────────────
+        for mac in base_devs:
+            if mac not in current_devices:
+                offline_this_run.append(mac)
+                alerts.append(f"{now_iso} LOW OFFLINE {mac} not seen this run")
+
+        # ── Build & write tables ──────────────────────────────────────────
+        arp_tbl      = tables.build_arp_ports_table(
+            hosts          = hosts,
+            ports          = self.ports,
+            do_os_scan     = self.os_scan,
+            resolve_hostname = _hn.resolve_hostname,
+            open_ports_for = open_ports_for,
+            os_guess_for_table = os_guess,
+        )
+        alerts_tbl   = tables.build_alerts_table(alerts)
+        offline_tbl  = tables.build_offline_table(offline_this_run, base_devs)
+        changes_tbl  = tables.build_changes_table(opened_by_mac, closed_by_mac)
+        inventory_tbl = tables.build_inventory_table(current_devices, base_devs, now_iso)
+
+        run_log = run_dir / "console_tables.txt"
+        for tbl in [arp_tbl, alerts_tbl, offline_tbl, changes_tbl, inventory_tbl]:
+            tables.print_and_log_table(console, tbl, run_log)
+
+        # ── CSV + Markdown ────────────────────────────────────────────────
+        tables.write_devices_csv(devices_csv, current_devices, base_devs, now_iso)
+        tables.write_markdown_report(
+            report_md, now_iso, self.subnet, gw_ip, gw_mac,
+            net_info, current_devices, alerts, offline_this_run,
+        )
+        tables.append_alerts_log(run_dir / "alerts.log", alerts)
+
+        # ── Update baseline ───────────────────────────────────────────────
+        baseline.update({
+            "last_run_at": now_iso,
+            "gateway_ip":  gw_ip,
+            "gateway_mac": gw_mac,
+            "ip_to_mac":   {ip: mac for ip, mac in hosts.items()},
+            "devices":     current_devices,
+        })
+        self._save_baseline(baseline)
+
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"Scan completed @ {now_iso}\n")
+            if alerts:
+                for a in alerts:
+                    f.write(f"  ALERT: {a}\n")
+
+        return baseline
+
+    # ── Loop mode ─────────────────────────────────────────────────────────
+
+    def run_loop(self, every_hours: float = 6.0) -> None:
+        """Run IDS repeatedly every `every_hours` hours until stopped."""
+        interval = every_hours * 3600.0
+        console.print(
+            f"[cyan]IDS loop started — scanning every {every_hours}h. "
+            "Press Ctrl+C to stop gracefully.[/cyan]"
+        )
         try:
             while True:
-                start
-                
                 try:
-                    run_ids_mode(args)
-                except Exception as e: console.print(f"[red]IDS run failed: {e}")
-                    with open(LOG_FILE, "a" encoding = "utf-8") as f:
-                        f.write(f:[{now.isoformat(sep=' ', time
-                        traceback.print_exc(file=f))}])
-                
+                    self.run_once()
+                except Exception as e:
+                    console.print(f"[red]IDS run failed:[/red] {e}")
+                    with open(LOG_FILE, "a", encoding="utf-8") as f:
+                        f.write(
+                            f"[{datetime.now().isoformat(sep=' ', timespec='seconds')}] "
+                            f"IDS run failed: {e}\n"
+                        )
+                        traceback.print_exc(file=f)
 
-                if STOP_REQUESTED
+                if self._stop:
                     break
 
+                end_time = time.time() + interval
+                console.print(
+                    f"[cyan]Next scan in {every_hours}h — Ctrl+C to stop.[/cyan]"
+                )
                 while time.time() < end_time:
-                    if STOP_REQUESTED:
+                    if self._stop:
                         break
-                        time.sleep(1)
-        
-        except KeyboardInterrupt: pass  
+                    time.sleep(1)
 
+                if self._stop:
+                    break
 
-#Instance(s)
+        except KeyboardInterrupt:
+            pass
 
-ids_mode = IDS()
-
-
-
+        console.print("[yellow]IDS stopped.[/yellow]")

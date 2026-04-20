@@ -1,15 +1,19 @@
 import platform
 import sys
-
+import socket
+import subprocess
+import re
 
 class Hostnames():
     
+    @staticmethod
     def hostname_for(ip):
             try:
                 platform.node()
             except Exception:
                 return None
 
+    @staticmethod
     def resolve_hostname(ip: str) -> str:
         try:
             name = socket.gethostbyaddr(ip)[0]
@@ -36,9 +40,30 @@ class Hostnames():
                     return m.group(1)
             except Exception:
                 pass
-            
-        return "Unknown"
+        
+        #Linux-only helpers
+        elif sys.platform.startswith("linux"):
+            try:
+                p = subprocess.run(["avahi-resolve", "-a", ip], capture_output=True, text=True, timeout=3)
+                if p.stdout:
+                    name = p.stdout.split()[1].rstrip(".")
+                    if name and name != ip:
+                        return name
+            except Exception:
+                pass
+            try:
+                p = subprocess.run(["nmblookup", "-A", ip], capture_output=True, text=True, timeout=3)
+                for line in p.stdout.splitlines():
+                    if "<00>" in line and "<GROUP>" not in line:
+                        name = line.split()[0].strip()
+                        if name and name != ip:
+                            return name
+            except Exception:
+                pass            
+            return "Unknown"
 
 #instances
 
 hostname = Hostnames()
+
+resolve_hostname = hostname.resolve_hostname

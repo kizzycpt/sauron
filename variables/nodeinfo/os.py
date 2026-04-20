@@ -7,7 +7,7 @@ from variables.ether.gateway import NetInfo
 parser = argparse.ArgumentParser()
 parser.add_argument("--os-scan", action="store_true")
 
-args = parser.parse_args
+args = parser.parse_args()
 
 #local ip
 ip = NetInfo.get("local_ip")
@@ -84,7 +84,7 @@ class OperatingSystem:
 
 
 operating_system = OperatingSystem(args)
-os_guess = operating_system.guess_for(ip)
-os_hint = operating_system.os_hint_from_services(ip)
-os_scan = operating_system.os_scan(ip)
+os_guess = operating_system.guess_for
+os_hint = operating_system.os_hint_from_services
+os_scan = operating_system.os_scan
 
