@@ -400,6 +400,11 @@ class FirewallLogParser:
         if ufw.exists():
             return ufw
         
+        kern = Path("var/;og/kern.log")
+        if kern.exists():
+            return kern
+        return "journalctl"
+        
 
 
     def parse_windows_log_line(self, line):
@@ -502,9 +507,11 @@ class FirewallLogParser:
 
     def tail_file(self):
         try:
+            if self.log_path == journalctl":
+                return
             if not Path(self.log_path):
                 return
-            with Path(self.log_path, "r", encoding="utf-8", errors="ignore") as f:
+            with Path(self.log_path).open("r", encoding="utf-8", errors="ignore") as f:
                 f.seek(0)
                 while self.running:
                     line = f.readline()
@@ -516,6 +523,21 @@ class FirewallLogParser:
                             self.add_entry(entry)
                     else:
                         time.sleep(0.01)
+        except Exception:
+            pass
+    
+    def _tail_journalctl(self):
+        try:
+            proc = subprocess.Popen(
+                ["journalctl", "-k", "-f", "--no-pager", "-o", "short"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            )
+            while self.running:
+                line = proc.stdout.readline()
+                if line:
+                    entry = self.parse_linux_log_line(line)
+                    if entry:
+                        self.add_entry(entry)
         except Exception:
             pass
 
