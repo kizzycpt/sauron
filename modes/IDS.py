@@ -1,22 +1,28 @@
 import json
+import sys
 import time
 import traceback
 from datetime import datetime
 from pathlib import Path
-
 from rich.console import Console
 
-from variables.Ether.gateway import Network, NetInfo
-from variables.Ether.L2 import ARP, ARP_SCAN
-from variables.Ether.ports import PortScan
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from variables.ether.gateway import Network, NetInfo
+from variables.ether.L2 import l2_arp, arp_scan
+from variables.ether.ports import port, port_scan
 from variables.ui.tables import tables
 from variables.utils.signals import install_sigint_handler
+
+
 
 console = Console()
 LOG_FILE = Path("logs") / "ids.log"
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_PORTS = PortScan.DEFAULT_PORTS if hasattr(PortScan, "DEFAULT_PORTS") else []
+DEFAULT_PORTS = port.DEFAULT_PORTS if hasattr(port_scan, "DEFAULT_PORTS") else []
 
 
 def make_run_dir(root: Path) -> Path:
@@ -239,3 +245,7 @@ class IDS:
 intrusion_detection = IDS()
 
 ids_loop = intrusion_detection.run_loop
+
+
+if __name__ == "__main__":
+    ids_loop()
