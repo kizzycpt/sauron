@@ -25,8 +25,7 @@ from collections import deque
 from pathlib import Path
 
 
-from variables.utils.signals import install_sigint_handler 
-from modes.IDS import ids_loop
+from modes.netscan import net_scan_panel
 
 # ─────────────────────────────────────────────
 # Dependency checks with install hints
@@ -862,180 +861,6 @@ class FirewallLogParser:
         return list(self.connections)
 
 
-# ─────────────────────────────────────────────
-# Network Scanner Panel
-# ─────────────────────────────────────────────
-class NetScanPanel:
-    """Lightweight built-in network scanner shown when pressing S.
-    Panel opens on first S press. Scan starts on second S press (or explicit call).
-    If modes.netscan is available its scan_mode() is preferred."""
-
-
-
-
-    def __init__(self):
-
-        self.results: list[dict] = []
-        self.scanning   = False
-        self.scan_done  = False
-        self.scan_range = ""
-        self._lock      = threading.Lock()
-
-
-
-
-    def _ping(self, ip: str) -> bool:
-
-        try:
-            flag = "-n" if sys.platform == "win32" else "-c"
-            r = subprocess.run(
-                ["ping", flag, "1", "-W", "1", ip],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=2,
-            )
-            return r.returncode == 0
-        except Exception:
-            return False
-
-
-
-
-    def _get_hostname(self, ip: str) -> str:
-
-        import socket
-
-        try:
-            return socket.gethostbyaddr(ip)[0]
-        except Exception:
-            return ""
-
-
-
-
-    def _port_check(self, ip: str, ports=(22, 80, 443, 3389, 445, 3306)) -> list:
-
-        import socket
-        open_ports = []
-
-        for p in ports:
-            try:
-                with socket.create_connection((ip, p), timeout=0.3):
-                    open_ports.append(p)
-            except Exception:
-                pass
-        return open_ports
-
-
-
-
-    def _scan_host(self, ip: str):
-
-        if not self._ping(ip):
-            return
-        hostname   = self._get_hostname(ip)
-        open_ports = self._port_check(ip)
-        os_guess   = self._os_detect(ip)
-        entry = {"ip": ip, "hostname": hostname, "ports": open_ports,
-                 "os": os_guess, "ts": datetime.now().strftime("%H:%M:%S")}
-
-        with self._lock:
-            self.results.append(entry)
-
-
-
-
-    def _os_detect(self, ip: str) -> str:
-
-        try:
-            r = subprocess.run(
-                ["nmap", "-O", "--osscan-guess", ip],
-                capture_output=True, text=True, timeout=10,
-            )
-
-            for line in r.stdout.splitlines():
-                if "OS guess" in line or "OS details" in line:
-                    return line.split(":", 1)[-1].strip()
-
-        except Exception:
-            pass
-        return "-"
-
-
-
-
-    def start_scan(self, subnet: str = ""):
-        """Start a background ping sweep of the local /24.
-        Only called when user explicitly presses S while panel is open."""
-
-        if self.scanning:
-            return
-        self.results.clear()
-        self.scan_done  = False
-        self.scanning   = True
-        self.scan_range = subnet
-
-        def _worker():
-
-            base = subnet
-
-            if not base:
-                try:
-                    hostname = socket.gethostname()
-                    local_ip = socket.gethostbyname(hostname)
-                    parts    = local_ip.rsplit(".", 1)
-                    base     = parts[0] + "."
-                except Exception:
-                    base = "192.168.1."
-
-            if not base.endswith("."):
-                base = base.rsplit(".", 1)[0] + "."
-            self.scan_range = base + "0/24"
-            threads = []
-
-            for i in range(1, 255):
-                t = threading.Thread(target=self._scan_host,
-                                     args=(f"{base}{i}",), daemon=True)
-                t.start()
-                threads.append(t)
-
-            for t in threads:
-                t.join(timeout=5)
-            self.scanning  = False
-            self.scan_done = True
-
-        threading.Thread(target=_worker, daemon=True).start()
-
-# ─────────────────────────────────────────────
-# Intrusion Detection System
-# ─────────────────────────────────────────────
-
-class IntrusionDestectionSystemPanel:
-    """Integrated Intrusion Detection system shown when pressing I.
-    Panel opens on first I press. Monitoring beigns to start on second I press (or call from the file).
-    If modes.IDS is available its start loop() is executed."""
-    
-
-    
-    def __init__(self):
-
-        self.scanning       = False
-        self.scan_complete  = False
-        self._lock          = threading.lock()
-    
-    
-    def start_loop():
-        
-        if self.scanning:
-            return
-        self.scan_complete  = False
-        self.scanning       = True
-        
-        def worker():
-
-            ids_loop()
-
-
-    
 
 
 # ─────────────────────────────────────────────
@@ -1046,15 +871,15 @@ class Globe:
 
     def __init__(self, width, height, aspect_ratio=2.0):
 
-        self.width         = max(1, width)
-        self.height        = max(1, height)
-        self.aspect_ratio  = aspect_ratio
-        self.map_width     = len(EARTH_MAP[0])
-        self.map_height    = len(EARTH_MAP)
-        self.radius        = max(1.0, min(width / 2.5, height * aspect_ratio / 2.5))
+        self.width        = max(1, width)
+        self.height       = max(1, height)
+        self.aspect_ratio = aspect_ratio
+        self.map_width    = len(EARTH_MAP[0])
+        self.map_height   = len(EARTH_MAP)
+        self.radius       = max(1.0, min(width / 2.5, height * aspect_ratio / 2.5))
         self.attacks: list = []
-        self.lighting      = False
-        self.plus_mode     = False
+        self.lighting     = False
+        self.plus_mode    = False
 
 
 
@@ -1475,7 +1300,7 @@ class Dashboard:
             (35.6762,  139.6503, "TYO"),
             (-33.8688, 151.2093, "SYD"),
         ]
-        self.netscan = NetScanPanel()
+        self.netscan = net_scan_panel
 
 
 
@@ -1727,18 +1552,6 @@ class Dashboard:
                 if x0 + j < width:
                     screen[y][x0+j] = (ch, 0, False)
         return screen
-
-
-
-
-
-    # ── IDS  Panel ──────────────────────
-    def render_ids_panel(self, width, height):
-        
-        screen = [[(" ",0, False)] * width for _ in range(height)]
-
-
-
 
 
 

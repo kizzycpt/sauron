@@ -7,22 +7,23 @@ from pathlib import Path
 from rich.console import Console
 
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 
 from variables.ether.gateway import Network, NetInfo
 from variables.ether.L2 import l2_arp, arp_scan
-from variables.ether.ports import port, port_scan
-from variables.ui.tables import tables
 from variables.utils.signals import install_sigint_handler
-
+from variables.ether.icmp import ping
+from variables.ether.ports import ports
+from variables.nodeinfo.hostname import get_hostname
+from variables.nodeinfo.os import os_detect
 
 
 console = Console()
 LOG_FILE = Path("logs") / "ids.log"
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_PORTS = port.DEFAULT_PORTS if hasattr(port_scan, "DEFAULT_PORTS") else []
+DEFAULT_PORTS = ports.DEFAULT_PORTS if hasattr(ports.port_check, "DEFAULT_PORTS") else []
 
 
 def make_run_dir(root: Path) -> Path:
@@ -93,7 +94,7 @@ class IDS:
 
         # ── ARP scan ─────────────────────────────────────────────────────
         console.print(f"[cyan]Scanning {self.subnet} …[/cyan]")
-        hosts  = ARP_SCAN(console, self.subnet, quiet=False)
+        hosts  = arp_scan(self.subnet, quiet=False)
         gw_ip  = NetInfo.get("gateway")
         gw_mac = hosts.get(gw_ip)
 
