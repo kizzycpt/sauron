@@ -14,7 +14,7 @@ from variables.nodeinfo.os import os_detect
 
 
 
-class NetScanPanel:
+class NetScan:
     def __init__(self):
         self.results: list[dict] = []
         self.scanning   = False
@@ -106,4 +106,4 @@ class NetScanPanel:
 
 
 #isntances
-net_scan_panel = NetScanPanel()
+net_scan_panel = NetScan()
