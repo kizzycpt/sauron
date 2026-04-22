@@ -25,6 +25,9 @@ from collections import deque
 from pathlib import Path
 
 
+from variables.utils.signals import install_sigint_handler 
+from modes.IDS import ids_loop
+
 # ─────────────────────────────────────────────
 # Dependency checks with install hints
 # ─────────────────────────────────────────────
@@ -973,7 +976,6 @@ class NetScanPanel:
 
         def _worker():
 
-            import socket
             base = subnet
 
             if not base:
@@ -1003,6 +1005,38 @@ class NetScanPanel:
 
         threading.Thread(target=_worker, daemon=True).start()
 
+# ─────────────────────────────────────────────
+# Intrusion Detection System
+# ─────────────────────────────────────────────
+
+class IntrusionDestectionSystemPanel:
+    """Integrated Intrusion Detection system shown when pressing I.
+    Panel opens on first I press. Monitoring beigns to start on second I press (or call from the file).
+    If modes.IDS is available its start loop() is executed."""
+    
+
+    
+    def __init__(self):
+
+        self.scanning       = False
+        self.scan_complete  = False
+        self._lock          = threading.lock()
+    
+    
+    def start_loop():
+        
+        if self.scanning:
+            return
+        self.scan_complete  = False
+        self.scanning       = True
+        
+        def worker():
+
+            ids_loop()
+
+
+    
+
 
 # ─────────────────────────────────────────────
 # Globe renderer
@@ -1012,15 +1046,15 @@ class Globe:
 
     def __init__(self, width, height, aspect_ratio=2.0):
 
-        self.width        = max(1, width)
-        self.height       = max(1, height)
-        self.aspect_ratio = aspect_ratio
-        self.map_width    = len(EARTH_MAP[0])
-        self.map_height   = len(EARTH_MAP)
-        self.radius       = max(1.0, min(width / 2.5, height * aspect_ratio / 2.5))
+        self.width         = max(1, width)
+        self.height        = max(1, height)
+        self.aspect_ratio  = aspect_ratio
+        self.map_width     = len(EARTH_MAP[0])
+        self.map_height    = len(EARTH_MAP)
+        self.radius        = max(1.0, min(width / 2.5, height * aspect_ratio / 2.5))
         self.attacks: list = []
-        self.lighting     = False
-        self.plus_mode    = False
+        self.lighting      = False
+        self.plus_mode     = False
 
 
 
@@ -1697,6 +1731,18 @@ class Dashboard:
 
 
 
+
+    # ── IDS  Panel ──────────────────────
+    def render_ids_panel(self, width, height):
+        
+        screen = [[(" ",0, False)] * width for _ in range(height)]
+
+
+
+
+
+
+
     # ── Analysis helpers ──────────────────────
     def analyze_ip_type(self, ip):
 
@@ -2112,6 +2158,9 @@ class Dashboard:
 def boot_animation():
     import random
     logo = r"""
+
+
+
         █████████    █████████   █████  █████ ███████████      ███████    ██████   █████
        ███░░░░░███  ███░░░░░███ ░░███  ░░███ ░░███░░░░░███   ███░░░░░███ ░░██████ ░░███
       ░███    ░░░  ░███    ░███  ░███   ░███  ░███    ░███  ███     ░░███ ░███░███ ░███
@@ -2120,13 +2169,11 @@ def boot_animation():
        ███    ░███ ░███    ░███  ░███   ░███  ░███    ░███ ░░███     ███  ░███  ░░█████
        ░█████████  █████   █████ ░░████████   █████   █████ ░░░███████░   █████  ░░█████
         ░░░░░░░░░  ░░░░░   ░░░░░   ░░░░░░░░   ░░░░░   ░░░░░    ░░░░░░░    ░░░░░    ░░░░░
-                      . . .. .      .  .          .         .   ....
-                      .   ..    .       .   .    .     .  .       .  
-                          .   .  .     .  .          .  .     .   ....
-                           .      .  .   .  .     .             .  . .    
+
+                           .      .  .   .  .     .               
                                   ...:-=++****+=--:...               
-                       .  .  ..=%%@@@@@@@@%%%@@%@@@@%#-.   ..   .   
-                           .-#@@%%%##%%%%######%%%%%%%%@@@*:..      .
+                       .  .  ..=%%@@@@@@@@%%%@@%@@@@%#-.   ..   .
+                           .-#@@%%%##%%%%######%%%%%%%%@@@*:..      
                          :#@%%#########*+--=++++***########%@*.      
                       .-%@%%%#######*+++=+*###**+=+++********#@#:.   
                     ..%@%###*##****+==+##*#=*%###*+====+*#####%%@#.  
@@ -2138,14 +2185,10 @@ def boot_animation():
                    ..#@@%%%####**+++=+##%%%++%####*++*#***##%#%%@@#. 
                     .:#@%%%##%##****++*###%###*+**########%@@@@%-.  
                      . .:%@%#%%%%%#####**+++=++*###%%##%%%%%@@%:.    
-                         ..=%@@%%@%%%%%%%%%%%%%%%%%%%%%%%@@%+:.    . 
+                         ..=%@@%%@%%%%%%%%%%%%%%%%%%%%%%%@@%+:.    
                      .  .   .-#%@@@@@@%%@@@%@@%%@@@@@@%#=..         
-                               ...:-+*#@@@@@@@@@@%*+-:...  .         
-                                          .  .        .            . 
-                      .   .    .    . .                   .   .     
-                     .   .        . ..     .       .      .    .     
-                               .    .                             .     
-                     .  .                         .   .     . .    .
+                               ...:-+*#@@@@@@@@@@%*+-:...        
+
     """
     lines = logo.strip().split("\n")
 
@@ -2179,8 +2222,8 @@ def boot_animation():
     print("\033[2J\033[H\033[31m")
     print(logo)
     print("\033[0m\033[90m")
-    print("Developed by kizzycpt".center(95))
-    print("(Concept by ringmst4r)".center(95))
+    print("Developed by kizzycpt".center(85))
+    print("(Concept by ringmst4r)".center(85))
     print("\033[0m")
     time.sleep(2.0)
 

@@ -95,6 +95,8 @@ class IDS:
         net_tbl  = tables.build_network_results_table(net_info, gw_mac=gw_mac)
         tables.print_and_log_table(console, net_tbl, LOG_FILE)
 
+        
+        
         # ── Per-host enrichment ───────────────────────────────────────────
         current_devices: dict = {}
         alerts: list[str]     = []
@@ -190,7 +192,7 @@ class IDS:
 
     # ── Loop mode ─────────────────────────────────────────────────────────
 
-    def run_loop(self, every_hours: float = 6.0) -> None:
+    def run_loop(self, every_hours: float = 0.25) -> None:
         """Run IDS repeatedly every `every_hours` hours until stopped."""
         interval = every_hours * 3600.0
         console.print(
@@ -229,3 +231,11 @@ class IDS:
             pass
 
         console.print("[yellow]IDS stopped.[/yellow]")
+
+
+
+#instances
+
+intrusion_detection = IDS()
+
+ids_loop = intrusion_detection.run_loop
