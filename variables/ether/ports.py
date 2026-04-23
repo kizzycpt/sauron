@@ -94,26 +94,26 @@ class Ports:
         995: "POP3 over SSL (POP3S)",
     }
     
-    def port_check(self, ip: str, ports = None) -> list:
-        
+    def port_check(self, ip: str, ports=None, stop_flag=None) -> list:
         if ports is None:
             ports = self.DEFAULT_PORTS
 
         open_ports = []
 
         for p in ports:
+            if stop_flag and stop_flag():
+                break
             try:
-                with socket.create_connection((ip, p), timeout = 0.3):
+                with socket.create_connection((ip, p), timeout=0.3):
                     open_ports.append(p)
-
             except Exception:
                 pass
         return open_ports
-
 
 #instances
 
 ports = Ports()
 
+common_ports = ports.DEFAULT_PORTS
 
 

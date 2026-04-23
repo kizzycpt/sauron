@@ -26,10 +26,12 @@ from pathlib import Path
 
 
 from modes.netscan import net_scan_panel
+from modes.IDS import ids_panel
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Dependency checks with install hints
-# ─────────────────────────────────────────────
+# ---------------------------------------------
+
 def _install_hint():
 
     print("\n📦 INSTALL INSTRUCTIONS:\n")
@@ -56,7 +58,7 @@ def _install_hint():
     print("    pip3 install -r requirements.txt --break-system-packages\n")
 
 
-# ── Hard dependency checks (module level) ────
+#--- Hard dependency checks (module level) ---
 try:
     import psutil
 except ImportError:
@@ -72,7 +74,7 @@ except ImportError:
     sys.exit(1)
 
 
-# ── Optional local modules ────────────────────
+#--- Optional local modules ------------------
 try:
     from modes.netscan import scan_mode
     HAS_NETSCAN = True
@@ -80,13 +82,13 @@ except ImportError:
     HAS_NETSCAN = False
 
 try:
-    from modes.IDS import IDS
+    from modes.IDS import ids_loop
     HAS_IDS = True
 except ImportError:
     HAS_IDS = False
 
 
-# ── Windows VT100 / UTF-8 ────────────────────
+#--- Windows VT100 / UTF-8 --------------------
 if sys.platform == "win32":
     try:
         import ctypes
@@ -97,15 +99,15 @@ if sys.platform == "win32":
         pass
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Version  (SemVer: MAJOR.MINOR.PATCH)
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 VERSION = "1.7.2"
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Colour helpers
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 def rgb(r, g, b):
     """ANSI foreground RGB escape."""
     return f"\033[38;2;{r};{g};{b}m"
@@ -119,9 +121,9 @@ def rgb_bg(r, g, b):
 RESET = "\033[0m"
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # ASCII art assets
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 DEATH_STAR_STATIC = [
     "                             .-------===-=+=-:                               ",
     "                       .-------:=-======-===+=++++=.                         ",
@@ -258,9 +260,9 @@ LOGOS = {
 }
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # IP Intelligence
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 class IPIntelligence:
     """IP Geolocation and Threat Intelligence."""
     _PRIVATE_PREFIXES = (
@@ -345,9 +347,10 @@ class IPIntelligence:
         return "UNKNOWN"
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Firewall Log Parser
-# ─────────────────────────────────────────────
+# ---------------------------------------------
+
 class FirewallLogParser:
     """Parse firewall logs and detect port scans"""
 
@@ -863,9 +866,9 @@ class FirewallLogParser:
 
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Globe renderer
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 class Globe:
     """3D ASCII Globe renderer."""
 
@@ -1006,9 +1009,9 @@ class Globe:
         return screen
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # System info helpers
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 def get_system_info():
     
     info = {}
@@ -1214,9 +1217,9 @@ def get_system_info():
 
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Dashboard
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 class Dashboard:
 
 
@@ -1280,8 +1283,11 @@ class Dashboard:
         self.operator_mode       = False
         self.netscan_mode        = False
         self.netscan_panel_open  = False
+        self.ids_mode            = False
+        self.ids_panel_open      = False
         self.running             = True
         self.globe               = None
+        self.ids_panel_state     = 0
 
         # System-info cache
         self.sys_info_cache    = None
@@ -1300,12 +1306,17 @@ class Dashboard:
             (35.6762,  139.6503, "TYO"),
             (-33.8688, 151.2093, "SYD"),
         ]
-        self.netscan = net_scan_panel
+        self.netscan        = net_scan_panel
+        self.ids_panel      = ids_panel 
+
+        self.ids_panel.stop_requested   = False
+        self.ids_panel.scanning         = False
+        self.ids_mode                   = False
 
 
 
 
-    # ── Firewall log verification ─────────────
+    #--- Firewall log verification -------------
     def _verify_firewall_logging_active(self):
 
         path = self.log_parser.log_path
@@ -1352,7 +1363,7 @@ class Dashboard:
 
 
 
-    # ── Theme helpers ─────────────────────────
+    #--- Theme helpers --------------------------
     def cycle_theme(self):
 
         self.current_theme_index = (self.current_theme_index + 1) % len(self.theme_names)
@@ -1387,7 +1398,7 @@ class Dashboard:
 
 
 
-    # ── Death Star renderer ───────────────────
+    #--- Death Star renderer -----------------------
     def render_death_star(self, width, height, rotation,
                           rainbow_mode=False, skittles_mode=False):
 
@@ -1435,7 +1446,7 @@ class Dashboard:
 
 
 
-    # ── Operator panel ────────────────────────
+    #--- Operator panel -------------------------
     def render_operator_panel(self, width, height):
 
         screen = [[(" ", 0, False)] * width for _ in range(height)]
@@ -1495,9 +1506,9 @@ class Dashboard:
 
 
 
-    # ── Net-scan panel ────────────────────────
-    def render_netscan_panel(self, width, height):
 
+    #--- Net-scan panel --------------------------
+    def render_netscan_panel(self, width, height):
         screen = [[(" ", 0, False)] * width for _ in range(height)]
 
         with self.netscan._lock:
@@ -1510,53 +1521,151 @@ class Dashboard:
         else:
             status = "READY  (press S to start scan)"
 
+        inner_w = width - 4
+
+        def pad(text):
+            return text[:inner_w].ljust(inner_w)
+
+        sep  = "═" * inner_w
+        dash = "─" * inner_w
+
         lines = [
-            "═" * 59,
-            "NET SCAN PANEL".center(59),
-            "═" * 59,
-            f"  Range  : {self.netscan.scan_range or 'auto-detect local /24'}",
-            f"  Status : {status}",
-            "─" * 59,
-            f"  {'IP':<16} {'HOSTNAME':<22} {'OPEN PORTS'}",
-            "─" * 59,
+            sep,
+            "NET SCAN PANEL".center(inner_w),
+            sep,
+            pad(f"  Range  : {self.netscan.scan_range or 'auto-detect local /24'}"),
+            pad(f"  Status : {status}"),
+            dash,
+            pad(f"  {'IP':<16} {'HOSTNAME':<22} {'OPEN PORTS'}"),
+            dash,
         ]
 
-        if not results:
-            if self.netscan.scanning:
-                lines.append("  Scanning... please wait (~5s)")
-            else:
-                lines.append("  No results yet.  Press S to execute scan.")
-        else:
-            for r in results[-min(len(results), height - 14):]:
-                ports_str = ",".join(str(p) for p in r["ports"]) if r["ports"] else "none"
-                host      = r["hostname"][:20] if r["hostname"] else ""
-                lines.append(f"  {r['ip']:<16} {host:<22} {ports_str}")
-
-        lines += [
-            "─" * 59,
-            "  [S] Start/restart scan   [O] Operator   [Q] Quit",
-            "═" * 59,
-        ]
 
         if HAS_NETSCAN:
-            lines.insert(3, "  (modes.netscan module detected)")
+            lines.insert(3, pad("  (modes.netscan module detected)"))
+
+        max_result_rows = height - len(lines) - 5
+        if not results:
+            if self.netscan.scanning:
+                lines.append(pad("  Scanning... please wait (~5s)"))
+            else:
+                lines.append(pad("  No results yet.  Press S to execute scan."))
+        else:
+            for r in results[-max(1, max_result_rows):]:
+                ports_str = ",".join(str(p) for p in r["ports"]) if r["ports"] else "none"
+                host      = r["hostname"][:20] if r["hostname"] else ""
+                lines.append(pad(f"  {r['ip']:<16} {host:<22} {ports_str}"))
+
+
+
+        lines += [
+            dash,
+            pad("  [S] Start/restart scan   [O] Operator   [Q] Quit"),
+            sep,
+        ]
+
         start_y = max(0, (height - len(lines)) // 2)
+        margin  = 2
+
+
 
         for i, line in enumerate(lines):
             y = start_y + i
             if y >= height:
                 break
-            x0 = max(0, (width - len(line)) // 2)
-
+            x0 = margin
             for j, ch in enumerate(line):
-                if x0 + j < width:
-                    screen[y][x0+j] = (ch, 0, False)
+                if x0 + j < width - margin:
+                    screen[y][x0 + j] = (ch, 0, False)
+
+        return screen
+
+    #--- IDS panel -----------------------------
+    def render_ids_panel(self, width, height):
+        screen = [[(" ", 0, False)] * width for _ in range(height)]
+
+        if self.ids_panel.scanning:
+            status = "MONITORING NETWORK... (press I to stop)"
+        elif self.ids_panel.scan_complete:
+            status = "IDS TERMINATED. (press I to close panel)"
+        else:
+            status = "IDS ON STANDBY (press I to start scan)"
+
+        inner_w = width - 4  # usable content width inside borders
+
+
+
+        def pad(text):
+            """Left-pad a line to fill inner width."""
+            return text[:inner_w].ljust(inner_w)
+
+        sep  = "═" * inner_w
+        dash = "─" * inner_w
+
+
+
+        lines = [
+            sep,
+            "Intrusion Detection System".center(inner_w),
+            sep,
+            pad(f"  Subnet  : {self.ids_panel.subnet or 'auto-detect'}"),
+            pad(f"  Status  : {status}"),
+            pad(f"  Devices : {len(self.ids_panel.current_devices)}"),
+            pad(f"  Alerts  : {len(self.ids_panel.alerts) if hasattr(self.ids_panel, 'alerts') else 0}"),
+            dash,
+        ]
+
+        if HAS_IDS:
+            lines.insert(3, pad("  (modes.IDS module detected)"))
+
+
+
+        # Alert entries
+        alerts = self.ids_panel.alerts if hasattr(self.ids_panel, "alerts") else []
+        max_alert_rows = height - len(lines) - 5
+        if alerts:
+            visible = alerts[-max(1, max_alert_rows):]
+            for a in visible:
+                # Trim long alert lines to fit
+                short = a.split("\n")[0]  # first line only
+                lines.append(pad(f"  {short}"))
+        else:
+            if self.ids_panel.scanning:
+                lines.append(pad("  Scanning... waiting for results."))
+            else:
+                lines.append(pad("  No alerts yet."))
+
+        lines += [
+            dash,
+            pad("  [I] Start / Stop IDS    [O] Operator    [Q] Quit"),
+            sep,
+        ]
+
+
+
+        # Center the block vertically
+        start_y = max(0, (height - len(lines)) // 2)
+        # Center block horizontally: margin so content sits in middle of width
+        margin = 2
+
+
+
+        for i, line in enumerate(lines):
+            y = start_y + i
+            if y >= height:
+                break
+            x0 = margin
+            for j, ch in enumerate(line):
+                if x0 + j < width - margin:
+                    screen[y][x0 + j] = (ch, 0, False)
+
         return screen
 
 
 
 
-    # ── Analysis helpers ──────────────────────
+
+    #--- Analysis helpers ----------------------
     def analyze_ip_type(self, ip):
 
         for prefix, type_, meaning, threat in [
@@ -1580,11 +1689,13 @@ class Dashboard:
 
 
 
-    # ── Main render ───────────────────────────
+    #--- Main render ---------------------------
     def render(self):
 
         globe_w = int(self.term.width * 0.65)
         globe_h = self.term.height - 2
+
+
 
         if self.globe is None or self.globe.width != globe_w or self.globe.height != globe_h:
             print(self.term.home + self.term.clear, end="", flush=True)
@@ -1595,6 +1706,9 @@ class Dashboard:
         rainbow  = self.theme.get("rainbow",  False)
         skittles = self.theme.get("skittles", False)
 
+
+
+
         if self.netscan_mode:
             globe_screen = self.render_netscan_panel(globe_w, globe_h)
         elif self.operator_mode:
@@ -1602,6 +1716,8 @@ class Dashboard:
         elif self.death_star_mode:
             globe_screen = self.render_death_star(globe_w, globe_h, rotation,
                                                   rainbow, skittles)
+        elif self.ids_mode:
+            globe_screen = self.render_ids_panel(globe_w, globe_h)
         else:
             self.globe.lighting  = self.lighting
             self.globe.plus_mode = self.plus_mode
@@ -1609,15 +1725,21 @@ class Dashboard:
 
         out = ["\033[?25l", self.term.home]
 
+
+
+
         if self.netscan_mode:
-            border_color = self.get_color("bright_cyan")
+            border_color = self.get_color(self.theme["globe"])
             title = " Net Scan "
         elif self.operator_mode:
-            border_color = self.get_color("bright_red")
+            border_color = self.get_color(self.theme["globe"])
             title = " Operator Mode "
         elif self.death_star_mode:
             border_color = self.get_color(self.theme["globe"])
             title = " Death Star "
+        elif self.ids_mode:
+            border_color = self.get_color(self.theme["globe"])
+            title = "Intrusion Detection System"
         else:
             border_color = self.get_color(self.theme["globe"])
             title = " Attack Globe "
@@ -1629,9 +1751,13 @@ class Dashboard:
             out.append(self.term.move(y, 0)          + border_color("│") + RESET)
             out.append(self.term.move(y, globe_w - 1) + border_color("│") + RESET)
 
+       
+       
         gc     = self.get_color(self.theme["globe"])
         gc_dim = self.get_color(self.theme["globe"], dim=True)
 
+        
+        
         for y, row in enumerate(globe_screen):
             line = []
 
@@ -1644,9 +1770,11 @@ class Dashboard:
                     elif shaded:
                         col = gc_dim
                     elif self.netscan_mode:
-                        col = self.get_color("bright_cyan")
+                        col = self.get_color(self.theme["globe"])
                     elif self.operator_mode:
-                        col = self.get_color("bright_red")
+                        col = self.get_color(self.theme["globe"])
+                    elif self.ids_mode:
+                        col = self.get_color(self.theme["globe"])
                     else:
                         col = gc
                     line.append(col(ch))
@@ -1661,7 +1789,9 @@ class Dashboard:
 
 
 
-        # ── Right panel: Live Feed ────────────
+
+
+        #--- Right panel: Live Feed -------------
         feed_x = globe_w + 2
         feed_w = max(20, self.term.width - feed_x - 1)
         feed_h = self.term.height // 2 - 2
@@ -1683,6 +1813,8 @@ class Dashboard:
         out.append(self.term.move(1, feed_x + 1) + self.term.bright_yellow(hdr[:feed_w-3]))
         out.append(self.term.move(2, feed_x + 1) + fc("─" * min(len(hdr), feed_w - 3)))
         conns = self.log_parser.get_connections()[-10:]
+
+
 
         for i, conn in enumerate(conns):
             yp = 3 + i
@@ -1723,7 +1855,9 @@ class Dashboard:
 
 
 
-        # ── Right panel: Stats ────────────────
+
+
+        #--- Right panel: Stats ----------------
         stats_y = feed_h + 1
         sc      = self.get_color(self.theme["stats"])
 
@@ -1738,6 +1872,8 @@ class Dashboard:
             out.append(self.term.move(y, feed_x + feed_w - 1) + sc("│") + RESET)
         out.append(self.term.move(self.term.height - 1, feed_x) +
                    sc("└" + "─" * (feed_w - 2) + "┘") + RESET)
+
+
 
 
 
@@ -1767,6 +1903,8 @@ class Dashboard:
         out.append(self.term.move(row,     feed_x + 1) + self.term.bright_cyan(uh))
         out.append(self.term.move(row + 1, feed_x + 1) + sc("─" * len(uh)))
 
+
+
         for i, key in enumerate(keys):
             if row + 2 + i >= self.term.height - 3:
                 break
@@ -1777,6 +1915,8 @@ class Dashboard:
                 val = val[:maxv - 3] + "..."
             out.append(self.term.move(row + 2 + i, feed_x + 1) +
                        sc(f"{key}: ") + self.term.white(val))
+
+
 
 
 
@@ -1793,17 +1933,21 @@ class Dashboard:
 
 
 
+
+
         # Legend bar inside globe
         leg_y = globe_h
 
         if self.show_legend:
-            legend = ("[Space]Pause [T]Theme [L]Light [P]Plus [D]DeathStar "
-                      "[O]Operator [S]NetScan [A]Details [C]Legend [Q]Quit")
+            legend = ("[Space]Pause [A]Details [D]DeathStar [I]IntrustionDetection System [L]Light [O]Operator "
+                      "[P]Plus [S]NetScan [T]Theme [C]Legend [Q]Quit")
             out.append(self.term.move(leg_y, 1) +
                        self.term.on_black +
                        self.term.bright_yellow(legend.center(globe_w - 2)) + RESET)
         else:
             out.append(self.term.move(leg_y, 1) + " " * (globe_w - 2))
+
+
 
 
 
@@ -1823,6 +1967,8 @@ class Dashboard:
                 out.append(self.term.move(py, px) +
                            self.term.on_black +
                            pc("┌─ Attack Details " + "─" * (pw - 19) + "┐") + RESET)
+                
+                
                 details = [
                     f"IP: {latest.ip}",
                     (f"Location: {getattr(latest,'city','?')}, "
@@ -1846,7 +1992,10 @@ class Dashboard:
                     out.append(self.term.move(py + 1 + di, px) +
                                self.term.on_black +
                                pc("│") + self.term.white(padl) + pc("│") + RESET)
+               
+               
                 bot = py + len(details) + 1
+               
                 out.append(self.term.move(bot, px) +
                            self.term.on_black + pc("└" + "─" * (pw - 2) + "┘") + RESET)
                 out.append(self.term.move(bot + 1, px) +
@@ -1859,7 +2008,7 @@ class Dashboard:
         sys.stdout.flush()
 
 
-    # ── Background threads ────────────────────
+    #--- Background threads ------------------------
     def update_system_info(self):
 
         while self.running:
@@ -1885,54 +2034,102 @@ class Dashboard:
                 if k in ("q", "x") or key.code == self.term.KEY_ESCAPE:
                     self.running = False
 
+
                 elif key == " ":
+
                     if self.paused:
                         self.start_time = (time.time() -
                                            (self.pause_rotation / (-2 * math.pi)) *
                                            self.rotation_period)
+
                     else:
                         self.pause_rotation = self.get_rotation()
                     self.paused = not self.paused
 
+
                 elif k == "t":
                     self.cycle_theme()
+
 
                 elif k == "l":
                     self.lighting  = not self.lighting
 
+
                 elif k == "p":
                     self.plus_mode = not self.plus_mode
+
 
                 elif k == "c":
                     self.show_legend = not self.show_legend
 
+
                 elif k == "d":
                     self.death_star_mode = not self.death_star_mode
 
+
                 elif k == "a":
                     self.show_attack_details = not self.show_attack_details
+
 
                 elif k == "o":
                     self.operator_mode = not self.operator_mode
                     if self.operator_mode:
                         self.netscan_mode = False
 
+
+                elif k == "i":
+                    if self.ids_panel_state == 0:
+                        # First press: open panel, do not start scan
+                        self.ids_panel_state        = 1
+                        self.ids_mode               = True
+                        self.netscan_mode           = False
+                        self.operator_mode          = False
+                        self.ids_panel.stop_requested = False
+                        self.ids_panel.scanning       = False
+                        self.ids_panel.scan_complete  = False
+
+                    elif self.ids_panel_state == 1:
+                        # Second press: start the scan
+                        self.ids_panel_state          = 2
+                        self.ids_panel.stop_requested = False
+                        self.ids_panel.scanning       = False
+                        self.ids_panel.scan_complete  = False
+                        threading.Thread(target=self.ids_panel.run_loop, daemon=True).start()
+
+                    elif self.ids_panel_state == 2:
+                        # Third press: stop the scan, keep panel open
+                        self.ids_panel_state          = 3
+                        self.ids_panel.stop_requested = True
+                        self.ids_panel.scanning       = False
+
+                    elif self.ids_panel_state == 3:
+                        # Fourth press: close the panel
+                        self.ids_panel_state          = 0
+                        self.ids_mode                 = False
+                        self.ids_panel.scan_complete  = False
+                        self.ids_panel.stop_requested = False
+
                 elif k == "s":
+                    
                     if not self.netscan_mode:
+
                         self.netscan_mode  = True
                         self.operator_mode = False
+                        self.ids_mode = False
                     else:
                         if not self.netscan.scanning:
+
                             if self.netscan.scan_done:
                                 with self.netscan._lock:
                                     self.netscan.results.clear()
                                 self.netscan.scan_done = False
+
                             self.netscan.start_scan()
 
 
 
 
-    # ── Main run loop ─────────────────────────
+    #--- Main run loop -------------------------
     def run(self):
 
         if self.use_real_logs:
@@ -1965,9 +2162,9 @@ class Dashboard:
                 print("\033[?25h", end="", flush=True)
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Boot animation
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 def boot_animation():
     import random
     logo = r"""
@@ -1983,24 +2180,24 @@ def boot_animation():
        ░█████████  █████   █████ ░░████████   █████   █████ ░░░███████░   █████  ░░█████
         ░░░░░░░░░  ░░░░░   ░░░░░   ░░░░░░░░   ░░░░░   ░░░░░    ░░░░░░░    ░░░░░    ░░░░░
 
-                           .      .  .   .  .     .               
-                                  ...:-=++****+=--:...               
-                       .  .  ..=%%@@@@@@@@%%%@@%@@@@%#-.   ..   .
-                           .-#@@%%%##%%%%######%%%%%%%%@@@*:..      
-                         :#@%%#########*+--=++++***########%@*.      
-                      .-%@%%%#######*+++=+*###**+=+++********#@#:.   
-                    ..%@%###*##****+==+##*#=*%###*+====+*#####%%@#.  
-                    .=@@%%%####*+*++==+*##%+++#%##**+=++*******%%@@@=.
-                   +@@%%%###****++=-+*####+**#%%##*+++*******##%%%%@=
-                   @@%######*+**++=-*##%%%+##*%####*++********###%%@@
-                   @%%#*******+++==-+#%#%%*###%%%##*++**##*##*###%@@#
-                   :%@%###*##***++===*##%%*#*#%%##*+++++****###%%@@#.
-                   ..#@@%%%####**+++=+##%%%++%####*++*#***##%#%%@@#. 
-                    .:#@%%%##%##****++*###%###*+**########%@@@@%-.  
-                     . .:%@%#%%%%%#####**+++=++*###%%##%%%%%@@%:.    
-                         ..=%@@%%@%%%%%%%%%%%%%%%%%%%%%%%@@%+:.    
-                     .  .   .-#%@@@@@@%%@@@%@@%%@@@@@@%#=..         
-                               ...:-+*#@@@@@@@@@@%*+-:...        
+                                .      .  .   .  .     .               
+                                     ...:-=++****+=--:...               
+                           .  .  ..=%%@@@@@@@@%%%@@%@@@@%#-.   ..   .
+                               .-#@@%%%##%%%%######%%%%%%%%@@@*:..      
+                             :#@%%#########*+--=++++***########%@*.      
+                          .-%@%%%#######*+++=+*###**+=+++********#@#:.   
+                        ..%@%###*##****+==+##*#=*%###*+====+*#####%%@#.  
+                        .=@@%%%####*+*++==+*##%+++#%##**+=++*******%%@@@=.
+                       +@@%%%###****++=-+*####+**#%%##*+++*******##%%%%@=
+                       @@%######*+**++=-*##%%%+##*%####*++********###%%@@
+                       @%%#*******+++==-+#%#%%*###%%%##*++**##*##*###%@@#
+                       :%@%###*##***++===*##%%*#*#%%##*+++++****###%%@@#.
+                       ..#@@%%%####**+++=+##%%%++%####*++*#***##%#%%@@#. 
+                        .:#@%%%##%##****++*###%###*+**########%@@@@%-.  
+                         . .:%@%#%%%%%#####**+++=++*###%%##%%%%%@@%:.    
+                             ..=%@@%%@%%%%%%%%%%%%%%%%%%%%%%%@@%+:.    
+                         .  .   .-#%@@@@@@%%@@@%@@%%@@@@@@%#=..         
+                                   ...:-+*#@@@@@@@@@@%*+-:...        
 
     """
     lines = logo.strip().split("\n")
@@ -2035,15 +2232,16 @@ def boot_animation():
     print("\033[2J\033[H\033[31m")
     print(logo)
     print("\033[0m\033[90m")
-    print("Developed by kizzycpt".center(85))
-    print("(Concept by ringmst4r)".center(85))
+    print("Developed by kizzycpt".center(95))
+    print("(Concept by ringmst4r)".center(95))
     print("\033[0m")
     time.sleep(2.0)
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Entry point
-# ─────────────────────────────────────────────
+# ---------------------------------------------
+
 def main():
 
     parser = argparse.ArgumentParser(description="Sauron - Network Attack Monitor Dashboard")

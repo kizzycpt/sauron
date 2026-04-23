@@ -41,8 +41,9 @@ class IntrusionDetectionSystem:
         self.subnet         = subnet or NetInfo.get("subnet")
         self.ports          = ports or common_ports
         self.hostname       = hostname or get_hostname
-        self.os_scan        = os_scan or os_detect
+        self.os_scan        = os_scan if os_scan is not None else False
         self.stop           = install_sigint_handler(console)
+        self.stop_requested = False
         self.BASE_DIR       = BASE_DIR.parent
         self.log_path       = self.BASE_DIR / "logs" / "IDS" / "ids.log" 
         self.run_dir_root   = self.BASE_DIR / "logs" / "IDS" / "runs"
@@ -54,6 +55,9 @@ class IntrusionDetectionSystem:
             "IP:MAC"     : {},
             "Devices"       : {},
         }
+        self.current_devices: dict = {} 
+        self.alerts         : list = []
+        self.offline_this_run: list= []
 
 
 
@@ -82,6 +86,7 @@ class IntrusionDetectionSystem:
         return dict(self.baseline)
     
     def save_baseline(self, baseline: dict):
+        self.BASELINE_FILE.parent.mkdir(parents=True, exist_ok=True)
         self.BASELINE_FILE.write_text(json.dumps(baseline, indent=2, default=str), encoding="utf-8")
 
 
@@ -99,13 +104,23 @@ class IntrusionDetectionSystem:
         #Information and Port Comparisons
         for ip, mac in hosts.items():
 
+            if self.stop_requested:
+                break
+
             host_name   = self.hostname
-            open_ports  = self.ports
+            open_ports  = ports.port_check(ip, self.ports)
             os_str      = " "
 
+
             if self.os_scan:
-                name, acc = os_detect(ip)
-                os_str    = f"{name} ({acc}%)" if name else "-"
+                result = os_detect(ip)
+
+                if result and len(result) == 2:
+                    name, acc = result
+                    os_str    = f"{name} ({acc}%)" if name else "-"
+                else:
+                    os_str    = "-"
+
 
             prev            = base_devices.get(mac, {})
             prev_ports      = set(prev.get("open_ports", []))
@@ -134,14 +149,17 @@ class IntrusionDetectionSystem:
                 "Last Seen"     : now_iso
             }
 
+        self.current_devices    = current_devices
+        self.alerts             = alerts
+        self.offline_this_run   = []
 
 
     #If certain devices offline
     def offline_detection(self, base_devices, now_iso):
         for mac in base_devices:
-            if mac not in current_devices:
-                offline_this_run.append(mac)
-                alerts.append(f"{now_iso}: [X] LOW OFFLINE [X] {mac} not seen this run")
+            if mac not in self.current_devices:
+                self.offline_this_run.append(mac)
+                self.alerts.append(f"{now_iso}: [X] LOW OFFLINE [X] {mac} not seen this run")
     
 
 
@@ -153,7 +171,7 @@ class IntrusionDetectionSystem:
             "Gateway IP"        : gw_ip,
             "Gateway Mac"       : gw_mac,
             "IP:MAC"            : {ip: mac for ip, mac in hosts.items()},
-            "Devices"           : current_devices
+            "Devices"           : self.current_devices
         })
 
         self.save_baseline(baseline)
@@ -161,8 +179,8 @@ class IntrusionDetectionSystem:
         with open(self.log_path, "a", encoding="utf-8") as f:
             f.write(f"======Scan Completed @ {now_iso}======\n\n")
 
-            if alerts:
-                for a in alerts:
+            if self.alerts:
+                for a in self.alerts:
                     f.write(f"  [!]ALERT[!]: {a}\n")
         return baseline
 
@@ -193,7 +211,6 @@ class IntrusionDetectionSystem:
         hosts       = arp_scan(self.subnet, quiet=False)
         gw_ip       = NetInfo.get("gateway")
         gw_mac      = gateway_mac
-
         net_info    = NetInfo.get_all() if hasattr(NetInfo, "get_all") else {}
 
         self.per_host_info(hosts, base_devices, is_first_run, now_iso)
@@ -201,6 +218,9 @@ class IntrusionDetectionSystem:
         self.update_baselines(baseline, gw_ip, gw_mac, hosts, now_iso)
 
     def run_loop(self, every_hours: float = 0.25):
+        
+        self.scanning = True
+        self.scan_complete = False
 
         interval    = every_hours * 3600.0
         
@@ -223,7 +243,7 @@ class IntrusionDetectionSystem:
                         traceback.print_exc(file=f)
 
 
-                if self.stop:
+                if self.stop or self.stop_requested:
                     break
 
                 end_time = time.time() + interval
@@ -231,27 +251,25 @@ class IntrusionDetectionSystem:
 
 
                 while time.time() < end_time:
-                    if self.stop:
+                    if self.stop or self.stop_requested:
                         break
                     time.sleep(1)
 
 
-                if self.stop:
+                if self.stop or self.stop_requested:
                     break
         except KeyboardInterrupt:
             pass
 
         console.print(f"[red][X]IDS Terminated[X]")
-
+        self.scanning = False
+        self.scan_complete = True
 
 #instances
-idsystem = IntrusionDetectionSystem()
 
-ids = idsystem.run_loop()
+ids_panel = IntrusionDetectionSystem()
+ids_loop = ids_panel.run_loop
 
-
-if __name__ == "__main__":
-    ids
 
 
 

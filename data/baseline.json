@@ -1,0 +1,61 @@
+{
+  "Last Run At": "2026-04-22T23:06:58",
+  "Gateway IP": "192.168.0.1",
+  "Gateway MAC": null,
+  "IP:MAC": {
+    "192.168.0.1": "68:7f:f0:0f:8c:fc",
+    "192.168.0.4": "2c:cf:67:50:f4:ed",
+    "192.168.0.5": "88:a2:9e:24:46:6b",
+    "192.168.0.2": "54:07:7d:2b:c2:b2",
+    "192.168.0.113": "2c:cf:67:50:f4:ed"
+  },
+  "Devices": {
+    "68:7f:f0:0f:8c:fc": {
+      "IP": [
+        "192.168.0.1"
+      ],
+      "Hostname": "<bound method Hostnames.get_hostname of <variables.nodeinfo.hostname.Hostnames object at 0x7f3bc3b51010>>",
+      "Open Ports": [
+        53,
+        80,
+        443
+      ],
+      "Possible OS": " ",
+      "Last Seen": "2026-04-22T23:06:58"
+    },
+    "2c:cf:67:50:f4:ed": {
+      "IP": [
+        "192.168.0.113"
+      ],
+      "Hostname": "<bound method Hostnames.get_hostname of <variables.nodeinfo.hostname.Hostnames object at 0x7f3bc3b51010>>",
+      "Open Ports": [
+        22
+      ],
+      "Possible OS": " ",
+      "Last Seen": "2026-04-22T23:06:58"
+    },
+    "88:a2:9e:24:46:6b": {
+      "IP": [
+        "192.168.0.5"
+      ],
+      "Hostname": "<bound method Hostnames.get_hostname of <variables.nodeinfo.hostname.Hostnames object at 0x7f3bc3b51010>>",
+      "Open Ports": [
+        22
+      ],
+      "Possible OS": " ",
+      "Last Seen": "2026-04-22T23:06:58"
+    },
+    "54:07:7d:2b:c2:b2": {
+      "IP": [
+        "192.168.0.2"
+      ],
+      "Hostname": "<bound method Hostnames.get_hostname of <variables.nodeinfo.hostname.Hostnames object at 0x7f3bc3b51010>>",
+      "Open Ports": [
+        80
+      ],
+      "Possible OS": " ",
+      "Last Seen": "2026-04-22T23:06:58"
+    }
+  },
+  "Gateway Mac": "ae:05:9c:03:c4:5b"
+}
