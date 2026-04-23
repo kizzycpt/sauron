@@ -12,6 +12,8 @@ from variables.ether.ports import ports
 from variables.nodeinfo.hostname import get_hostname
 from variables.nodeinfo.os import os_detect
 
+#find parent folder
+BASE_DIR = Path(__file__).resolve().parent
 
 
 class NetScan:
@@ -21,7 +23,7 @@ class NetScan:
         self.scan_done  = False
         self.scan_range = ""
         self._lock      = threading.Lock()
-
+        self.log_path   = BASE_DIR / "logs" / "netscan.log"
 
 
 
@@ -42,6 +44,7 @@ class NetScan:
             self.results.append(entry)
 
 
+            
 
 
     def start_scan(self, subnet: str = ""):

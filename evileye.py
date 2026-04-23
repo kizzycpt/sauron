@@ -260,6 +260,21 @@ LOGOS = {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ---------------------------------------------
 # IP Intelligence
 # ---------------------------------------------
@@ -345,6 +360,21 @@ class IPIntelligence:
                ["telecom", "comcast", "verizon", "att", "broadband", "cable"]):
             return "ISP"
         return "UNKNOWN"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # ---------------------------------------------
@@ -866,6 +896,19 @@ class FirewallLogParser:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ---------------------------------------------
 # Globe renderer
 # ---------------------------------------------
@@ -1007,6 +1050,17 @@ class Globe:
 
                 screen[y][x] = (ch, cidx, shaded)
         return screen
+
+
+
+
+
+
+
+
+
+
+
 
 
 # ---------------------------------------------
@@ -1214,6 +1268,19 @@ def get_system_info():
         info["Battery"] = None
 
     return info, os_name
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1939,7 +2006,7 @@ class Dashboard:
         leg_y = globe_h
 
         if self.show_legend:
-            legend = ("[Space]Pause [A]Details [D]DeathStar [I]IntrustionDetection System [L]Light [O]Operator "
+            legend = ("[Space]Pause [A]Details [D]DeathStar [I]IDS [L]Light [O]Operator "
                       "[P]Plus [S]NetScan [T]Theme [C]Legend [Q]Quit")
             out.append(self.term.move(leg_y, 1) +
                        self.term.on_black +
@@ -2129,6 +2196,16 @@ class Dashboard:
 
 
 
+
+
+
+
+
+
+
+
+
+
     #--- Main run loop -------------------------
     def run(self):
 
@@ -2238,6 +2315,25 @@ def boot_animation():
     time.sleep(2.0)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ---------------------------------------------
 # Entry point
 # ---------------------------------------------
@@ -2300,5 +2396,9 @@ def main():
         print("\033[?25h", end="", flush=True)
 
 
+
+
+
+#good luck ;)
 if __name__ == "__main__":
     main()

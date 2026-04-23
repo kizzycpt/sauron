@@ -47,7 +47,7 @@ class IntrusionDetectionSystem:
         self.BASE_DIR       = BASE_DIR.parent
         self.log_path       = self.BASE_DIR / "logs" / "IDS" / "ids.log" 
         self.run_dir_root   = self.BASE_DIR / "logs" / "IDS" / "runs"
-        self.BASELINE_FILE  = self.BASE_DIR / "data" / "baseline.json"
+        self.BASELINE_FILE  = self.BASE_DIR / "logs" / "IDS" / "data" / "baseline.json"
         self.baseline: dict = {
             "Last Run At"   : None,
             "Gateway IP"    : None,
@@ -100,6 +100,9 @@ class IntrusionDetectionSystem:
 
         opened_by_mac: dict         = {}
         closed_by_mac: dict         = {}
+        
+
+
 
         #Information and Port Comparisons
         for ip, mac in hosts.items():
@@ -130,6 +133,8 @@ class IntrusionDetectionSystem:
             closed          = sorted(prev_ports - current_ports)
 
 
+
+
             #log alerts table
             if opened:
                 opened_by_mac[mac] = opened
@@ -154,6 +159,8 @@ class IntrusionDetectionSystem:
         self.offline_this_run   = []
 
 
+
+
     #If certain devices offline
     def offline_detection(self, base_devices, now_iso):
         for mac in base_devices:
@@ -161,6 +168,8 @@ class IntrusionDetectionSystem:
                 self.offline_this_run.append(mac)
                 self.alerts.append(f"{now_iso}: [X] LOW OFFLINE [X] {mac} not seen this run")
     
+
+
 
 
     #update for comparison (previos scan as a baseline)
@@ -184,6 +193,11 @@ class IntrusionDetectionSystem:
                     f.write(f"  [!]ALERT[!]: {a}\n")
         return baseline
 
+
+
+
+
+
 # --- IDS Scan 1x ---------------------------------------------------------
 
 
@@ -203,6 +217,9 @@ class IntrusionDetectionSystem:
         baseline    = self.load_baseline()
         base_devices= baseline.get("devices", {})
         is_first_run= not self.BASELINE_FILE.exists()
+
+
+
 
 
 
@@ -264,6 +281,7 @@ class IntrusionDetectionSystem:
         console.print(f"[red][X]IDS Terminated[X]")
         self.scanning = False
         self.scan_complete = True
+
 
 #instances
 
