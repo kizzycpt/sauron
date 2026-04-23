@@ -334,4 +334,4 @@ MIT — do whatever you want, just don't use it for evil doe.
 
 ---
 
-*"One dashboard to monitor them all."*
+*"I see you. -Sauron"*
