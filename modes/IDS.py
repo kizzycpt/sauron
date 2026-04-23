@@ -138,7 +138,7 @@ class IntrusionDetectionSystem:
             #log alerts table
             if opened:
                 opened_by_mac[mac] = opened
-                alerts.append(f"{now_iso}: [!] PORT OPENED[!] {mac} opened {opened}.")
+                alerts.append(f"{now_iso}: [!] PORT OPENED [!] {mac} opened {opened}.")
             
             if closed:
                 alerts.append(f"{now_iso}: [+] PORT CLOSED [+]\n {mac} closed {closed}")
@@ -258,6 +258,11 @@ class IntrusionDetectionSystem:
         except Exception:
             pass
 
+
+
+
+
+
         # --- Write report.md ----------------------------------------------------
         try:
             alert_count   = len(self.alerts)
@@ -311,7 +316,10 @@ class IntrusionDetectionSystem:
 
         return baseline
 
-    def run_loop(self, every_hours: float = 0.002):
+
+
+
+    def run_loop(self, every_hours: float = 0.0001):
         
         self.scanning = True
         self.scan_complete = False

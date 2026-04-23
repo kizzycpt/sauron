@@ -26,3 +26,8 @@ Thumbs.db
 test.py
 old ARP.py
 dashboard.py
+
+# PyInstaller
+build/
+dist/
+*.spec

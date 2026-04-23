@@ -18,8 +18,6 @@ class Broadcast:
                 result = srp(packet, timeout=2, verbose=0)[0]
                 hosts: dict[str, str] = {}
                 for _, received in result:
-                    if not quiet:
-                        print(f"Host found: {received.psrc} - MAC: {received.hwsrc}\n")
                     hosts[received.psrc] = received.hwsrc
                 return hosts
 
