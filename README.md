@@ -73,15 +73,15 @@ pip3 install -r requirements.txt --break-system-packages
 ## Usage
 
 ```bash
-python3 main.py
+python3 evileye.py
 ```
 
 ### Options
 
 ```bash
-python3 main.py --theme matrix       # Set startup theme
-python3 main.py --rotation 30        # Globe rotation speed in seconds
-python3 main.py --log-path /var/log/ufw.log  # Custom firewall log path
+python3 evileye.py --theme matrix       # Set startup theme
+python3 evileye.py --rotation 30        # Globe rotation speed in seconds
+python3 evileye.py --log-path /var/log/ufw.log  # Custom firewall log path
 ```
 
 ---
