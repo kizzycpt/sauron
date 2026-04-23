@@ -1704,7 +1704,7 @@ class Dashboard:
 
         lines += [
             dash,
-            pad("  [I] Start / Stop IDS    [O] Operator    [Q] Quit"),
+            pad("  [I] Start/Stop      [O] Operator    [Q] Quit"),
             sep,
         ]
 

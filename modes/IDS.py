@@ -3,7 +3,7 @@ import sys
 import time
 import traceback
 import logging
-
+import csv 
 from datetime import datetime
 from pathlib import Path
 from rich.console import Console
@@ -66,10 +66,10 @@ class IntrusionDetectionSystem:
 
     @staticmethod
     def make_run_dir(root: Path) -> Path:
-        start_time  = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        start_time  = datetime.now().strftime("%Y-%m-%d")
         date        = root / start_time
 
-        date.mkdir(parents=True)
+        date.mkdir(parents=True, exist_ok=True)
         return date
 
 
@@ -110,7 +110,7 @@ class IntrusionDetectionSystem:
             if self.stop_requested:
                 break
 
-            host_name   = self.hostname
+            host_name   = get_hostname(ip)
             open_ports  = ports.port_check(ip, self.ports)
             os_str      = " "
 
@@ -138,13 +138,13 @@ class IntrusionDetectionSystem:
             #log alerts table
             if opened:
                 opened_by_mac[mac] = opened
-                alerts.append(f"{now_iso}: [!]MEDIUM PORT OPENED[!] {mac} opened {opened}.")
+                alerts.append(f"{now_iso}: [!] PORT OPENED[!] {mac} opened {opened}.")
             
             if closed:
-                alerts.append(f"{now_iso}: [+] MEDIUM PORT CLOSED [+]\n {mac} closed {closed}")
+                alerts.append(f"{now_iso}: [+] PORT CLOSED [+]\n {mac} closed {closed}")
             
             if mac not in base_devices and not is_first_run:
-                alerts.append(f"{now_iso}: [+] HIGH NEW DEVICE [+]\n {ip}: {mac} first seen")
+                alerts.append(f"{now_iso}: [+] NEW DEVICE [+] {mac} first seen")
             
             current_devices[mac]   = {
                 "IP"            : [ip],
@@ -156,7 +156,6 @@ class IntrusionDetectionSystem:
 
         self.current_devices    = current_devices
         self.alerts             = alerts
-        self.offline_this_run   = []
 
 
 
@@ -166,7 +165,7 @@ class IntrusionDetectionSystem:
         for mac in base_devices:
             if mac not in self.current_devices:
                 self.offline_this_run.append(mac)
-                self.alerts.append(f"{now_iso}: [X] LOW OFFLINE [X] {mac} not seen this run")
+                self.alerts.append(f"{now_iso}: [X]DEVICE OFFLINE [X] {mac} not seen this run")
     
 
 
@@ -190,7 +189,7 @@ class IntrusionDetectionSystem:
 
             if self.alerts:
                 for a in self.alerts:
-                    f.write(f"  [!]ALERT[!]: {a}\n")
+                    f.write(f"  [!] ALERT[!]: {a}\n")
         return baseline
 
 
@@ -203,6 +202,8 @@ class IntrusionDetectionSystem:
 
     def run_once(self) -> dict:
         """ Run the IDS scan once. Return the updated basline for comparison """
+        
+        self.offline_this_run   = []
 
         now         = datetime.now()
         now_iso     = now.isoformat(timespec="seconds")
@@ -215,7 +216,7 @@ class IntrusionDetectionSystem:
         report_md   = run_dir / "report.md"
 
         baseline    = self.load_baseline()
-        base_devices= baseline.get("devices", {})
+        base_devices= baseline.get("Devices", {})
         is_first_run= not self.BASELINE_FILE.exists()
 
 
@@ -233,28 +234,102 @@ class IntrusionDetectionSystem:
         self.per_host_info(hosts, base_devices, is_first_run, now_iso)
         self.offline_detection(base_devices, now_iso)
         self.update_baselines(baseline, gw_ip, gw_mac, hosts, now_iso)
+        return baseline
 
-    def run_loop(self, every_hours: float = 0.25):
+
+
+    # --- Write devices.csv --------------------------------------------------
+        try:
+            import csv
+            with open(devices_csv, "a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                if devices_csv.stat().st_size == 0:
+                    writer.writerow(["MAC", "IP", "Hostname", "Open Ports", "Possible OS", "Last Seen"])
+
+                for mac, info in self.current_devices.items():
+                    writer.writerow([
+                        mac,
+                        ", ".join(info.get("IP", [])),
+                        info.get("Hostname", ""),
+                        ", ".join(str(p) for p in info.get("Open Ports", [])),
+                        info.get("Possible OS", ""),
+                        info.get("Last Seen", ""),
+                    ])
+        except Exception:
+            pass
+
+        # --- Write report.md ----------------------------------------------------
+        try:
+            alert_count   = len(self.alerts)
+            device_count  = len(self.current_devices)
+            offline_count = len(self.offline_this_run)
+
+            with open(report_md, "a", encoding="utf-8") as f:
+                f.write(f"# IDS Run Report - {now_iso}\n\n")
+                f.write(f"**Timestamp:** {now_iso}  \n")
+                f.write(f"**Subnet:** {self.subnet}  \n")
+                f.write(f"**Gateway IP:** {gw_ip}  \n")
+                f.write(f"**Gateway MAC:** {gw_mac}  \n\n")
+                f.write(f"---\n\n")
+                f.write(f"## Summary\n\n")
+                f.write(f"| Metric | Value |\n")
+                f.write(f"|--------|-------|\n")
+                f.write(f"| Devices Found | {device_count} |\n")
+                f.write(f"| Devices Offline | {offline_count} |\n")
+                f.write(f"| Alerts Triggered | {alert_count} |\n\n")
+                f.write(f"---\n\n")
+
+                f.write(f"## Devices\n\n")
+                f.write(f"| MAC | IP | Hostname | Open Ports | OS |\n")
+                f.write(f"|-----|----|----------|------------|----|\n")
+                for mac, info in self.current_devices.items():
+                    ip        = ", ".join(info.get("IP", []))
+                    hostname  = info.get("Hostname", "-")
+                    op        = ", ".join(str(p) for p in info.get("Open Ports", []))
+                    os_str    = info.get("Possible OS", "-")
+                    f.write(f"| {mac} | {ip} | {hostname} | {op} | {os_str} |\n")
+
+                f.write(f"\n---\n\n")
+
+                f.write(f"## Alerts\n\n")
+                if self.alerts:
+                    for alert in self.alerts:
+                        f.write(f"- {alert}\n")
+                else:
+                    f.write(f"_No alerts this run._\n")
+
+                f.write(f"\n---\n\n")
+
+                if self.offline_this_run:
+                    f.write(f"## Offline Devices\n\n")
+                    for mac in self.offline_this_run:
+                        f.write(f"- {mac}\n")
+                    f.write(f"\n")
+
+        except Exception as e:
+            console.print(f"[red][!] Failed to write report.md: {e}")
+
+        return baseline
+
+    def run_loop(self, every_hours: float = 0.002):
         
         self.scanning = True
         self.scan_complete = False
 
         interval    = every_hours * 3600.0
         
-        console.print(f"[cyan]IDS Monitoring Mode Activated - Scanning Every {every_hours} Hr(s). ")
-        console.print(f"[yellow][!]Press (Ctrl+C) to terminate monitoring.")
+          
         
-        
-
         try:
             while True:
                 try:
                     self.run_once()
                 except Exception as e:
-                    console.print(f"[red][!]Error Initiating Scan[!]: {e}")
+                    console.print(f"[red][!] Scan error: {e}")
+
 
                     with open(self.log_path, "a", encoding="utf-8") as f:
-                        f.write(f"[{datetime.now().isoformat(sep=' ', timespec='seconds')}])"
+                        f.write(f"[{datetime.now().isoformat(sep=' ', timespec='seconds')}]"
                         f"[!]IDS Monitoring Failed[!]: {e}\n")
                         
                         traceback.print_exc(file=f)
@@ -264,7 +339,6 @@ class IntrusionDetectionSystem:
                     break
 
                 end_time = time.time() + interval
-                console.print(f"[cyan][+]Next Scan in {every_hours}Hr(s) - CTRL+C to stop.")
 
 
                 while time.time() < end_time:
@@ -278,7 +352,6 @@ class IntrusionDetectionSystem:
         except KeyboardInterrupt:
             pass
 
-        console.print(f"[red][X]IDS Terminated[X]")
         self.scanning = False
         self.scan_complete = True
 
