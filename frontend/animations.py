@@ -38,13 +38,13 @@ LOGO = r"""
                                    ...:-+*#@@@@@@@@@@%*+-:...        
 """
 
-
+#if u wanna skip animations
 def _check_skip() -> bool:
     if sys.platform == "win32":
         return msvcrt.kbhit() and msvcrt.getch() in (b"\r", b"\n")
     return bool(select.select([sys.stdin], [], [], 0)[0]) and sys.stdin.read(1) in ("\r", "\n")
 
-
+#animation start up
 def boot_animation():
     lines = LOGO.strip().split("\n")
 

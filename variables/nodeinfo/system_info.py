@@ -29,6 +29,8 @@ def get_system_info() -> tuple[dict, str]:
     info["Architecture"] = platform.machine()
     info["Host"]         = platform.node()
 
+
+
     # Terminal
     for var, name in [("WT_SESSION", "Windows Terminal"), ("ConEmuPID", "ConEmu"),
                       ("HYPER_VERSION", "Hyper"), ("ALACRITTY_SOCKET", "Alacritty")]:
@@ -37,6 +39,8 @@ def get_system_info() -> tuple[dict, str]:
             break
     else:
         info["Terminal"] = os.environ.get("TERM_PROGRAM") or os.environ.get("TERM") or "Unknown"
+
+
 
     # Resolution
     try:

