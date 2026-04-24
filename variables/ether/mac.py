@@ -1,75 +1,55 @@
-from variables.ether.gateway import Network, NetInfo
-
+import sys
+from pathlib import Path
+from scapy.all import ARP, Ether, srp
 
 import netifaces as n
-import subprocess
-import re 
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from gateway import Network, NetInfo
 
 
-class MAC():
+class MAC:
 
-#----------------
-    bad_iface_prefix = ("lo", "docker", "wg", "br-", "veth", "virbr", "zt", "vboxnet")
-#----------------
+    _BAD_IFACE_PREFIX = ("lo", "docker", "wg", "br-", "veth", "virbr", "zt", "vboxnet")
+
     gateway_ip = NetInfo.get("gateway")
 
     @staticmethod
-    def get_gateway_mac():
+    def get_gateway_mac() -> str | None:
         try:
-            route_check = subprocess.check_output(["ip", "route"], text=True)
-            route_gateway = None
-
-            for line in route_check.splitlines():
-                if line.startswith("default"):
-                    route_gateway = line.split()[2]
-                    break
-
-            if not route_gateway:
-                return None
-
-            if MAC.gateway_ip and MAC.gateway_ip != route_gateway:
-                return None
-
-            mac_result = subprocess.check_output(["ip", "neigh"], text=True)
-
-            for line in mac_result.splitlines():
-                if route_gateway in line:
-                    match = re.search(r"lladdr\s+([0-9a-fA-F:]{17})", line)
-                    if match:
-                        return match.group(1)
-
-            return None
-
+            gw_ip, gw_iface = n.gateways()['default'][n.AF_INET]
+            return n.ifaddresses(gw_iface)[n.AF_LINK][0]['addr']
         except Exception as e:
-            print(f"error resolving gateway MAC: {e}")
+            print(f"Error resolving gateway MAC: {e}")
             return None
 
     @staticmethod
-    def get_my_mac():
+    def get_my_mac() -> dict | None:
         try:
             for iface in n.interfaces():
-                if iface.startswith(MAC.bad_iface_prefix):
+                if iface.startswith(MAC._BAD_IFACE_PREFIX):
                     continue
-
-                addrs = n.ifaddresses(iface)
-                iface_link = addrs.get(n.AF_LINK, [])
-                my_mac = iface_link[0].get("addr") if iface_link else None
-
+                addrs    = n.ifaddresses(iface)
+                iface_lk = addrs.get(n.AF_LINK, [])
+                my_mac   = iface_lk[0].get("addr") if iface_lk else None
                 if my_mac and my_mac != "00:00:00:00:00:00":
                     return {"Interface": iface, "MAC": my_mac}
-
             return None
-
         except Exception as e:
-            print(f"error in resolving MAC: {e}")
+            print(f"Error resolving MAC: {e}")
             return {}
 
+    @staticmethod
+    def get_mac(ip: str) -> str | None:
+        packet           = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ip)
+        answered, _      = srp(packet, timeout=2, verbose=0)
+        for _, received in answered:
+            return received.hwsrc
+        return None
 
-mac = MAC()
 
+mac         = MAC()
 my_mac_info = mac.get_my_mac()
-my_mac = my_mac_info.get("MAC") if my_mac_info else None
-
+my_mac      = my_mac_info.get("MAC") if my_mac_info else None
+target_mac  = mac.get_mac
 gateway_mac = mac.get_gateway_mac()
-
- 

@@ -1,11 +1,15 @@
 
+import select
+import random
+import time
 
-# ---------------------------------------------
-# Boot animation
-# ---------------------------------------------
-def boot_animation():
-    import random
-    logo = r"""
+import sys
+if sys.platform == 'win32':
+    import msvcrt
+    def get_char():
+        return msvcrt.getch()
+
+LOGO = r"""
         █████████    █████████   █████  █████ ███████████      ███████    ██████   █████
        ███░░░░░███  ███░░░░░███ ░░███  ░░███ ░░███░░░░░███   ███░░░░░███ ░░██████ ░░███
       ░███    ░░░  ░███    ░███  ░███   ░███  ░███    ░███  ███     ░░███ ░███░███ ░███
@@ -32,17 +36,18 @@ def boot_animation():
                              ..=%@@%%@%%%%%%%%%%%%%%%%%%%%%%%@@%+:.    
                          .  .   .-#%@@@@@@%%@@@%@@%%@@@@@@%#=..         
                                    ...:-+*#@@@@@@@@@@%*+-:...        
-    """
-    lines = logo.strip().split("\n")
-    def _check_skip():
-        if sys.platform == "win32":
-            import msvcrt
-            if msvcrt.kbhit():
-                return msvcrt.getch() in (b"\r", b"\n")
-        else:
-            if select.select([sys.stdin], [], [], 0)[0]:
-                return sys.stdin.read(1) in ("\r", "\n")
-        return False
+"""
+
+
+def _check_skip() -> bool:
+    if sys.platform == "win32":
+        return msvcrt.kbhit() and msvcrt.getch() in (b"\r", b"\n")
+    return bool(select.select([sys.stdin], [], [], 0)[0]) and sys.stdin.read(1) in ("\r", "\n")
+
+
+def boot_animation():
+    lines = LOGO.strip().split("\n")
+
     for pct in (0.15, 0.30, 0.50, 0.70, 0.85, 1.0):
         print("\033[2J\033[H\033[31m")
         for ln in lines:
@@ -50,14 +55,11 @@ def boot_animation():
         if _check_skip():
             break
         time.sleep(0.4 if pct < 1.0 else 0)
+
     print("\033[2J\033[H\033[31m")
-    print(logo)
+    print(LOGO)
     print("\033[0m\033[90m")
     print("Developed by kizzycpt".center(95))
     print("(Concept by ringmst4r)".center(95))
     print("\033[0m")
     time.sleep(2.0)
-
-
-
-
