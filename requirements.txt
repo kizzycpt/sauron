@@ -9,6 +9,7 @@ rich
 psutil
 blessed
 python-nmap
+pyinstaller
 
 
 

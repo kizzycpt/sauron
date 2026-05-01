@@ -314,7 +314,7 @@ class Dashboard:
 
         try:
             from modes.netscan import scan_mode
-            lines.insert(3, pad("  (modes.netscan module detected)"))
+            lines.insert(3, pad("  [!] Network Scanner Module Detected [!]"))
         except ImportError:
             pass
 
