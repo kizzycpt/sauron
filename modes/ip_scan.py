@@ -4,7 +4,7 @@ from threading              import Thread, Lock
 from concurrent.futures     import ThreadPoolExecutor
 from datetime               import datetime
 from pathlib                import Path
-from pybloom                import BloomFilter
+from pybloom_live                import BloomFilter
 
 base_dir = Path(__file__).resolve().parent
 class SaveIps:
