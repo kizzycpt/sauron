@@ -10,6 +10,6 @@ psutil
 blessed
 python-nmap
 pyinstaller
-
+pybloom_live
 
 

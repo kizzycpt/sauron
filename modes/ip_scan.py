@@ -4,7 +4,7 @@ from threading              import Thread, Lock
 from concurrent.futures     import ThreadPoolExecutor
 from datetime               import datetime
 from pathlib                import Path
-
+from pybloom                import BloomFilter
 
 base_dir = Path(__file__).resolve().parent
 class SaveIps:
@@ -31,6 +31,7 @@ class SaveIps:
 class MassIPScanner:
 
     def __init__(self):
+        
         self.scanning       = False
         self.scan_done      = False
 
@@ -48,41 +49,74 @@ class MassIPScanner:
                                 990, 993, 995,]
         
         self.threads        = 250
+        self.bloomsize      = 1_000_000_000
+        self.bfilter_all    = None
         self.timeout        = 1
         self.save           = False
         self.save_results   = SaveIps()
+        
 
         self.blocks         = []
         self.ip_pool        = []
         self.lock           = Lock()
 
 
+        self.country        = False
+        self.asn            = False
+
+        #Modes              
+        self.iot            = False
+        self.nas            = False
+        self.router         = False
+        self.database       = False
+        self.webserver      = False
+        self.remote         = False
+        self.camera         = False
+        
+
+
+
     def _track_ip_blocks(self):
 
         with self.lock: 
-            while self.blocks or self.ip_pool:
+            try:
+                while self.blocks or self.ip_pool:
 
-                if not self.ip_pool:
-                    block           = self.blocks.pop(0)
-                    network         = ipaddress.IPv4Network(block)
-                    self.ip_pool    = [str(ip) for ip in network]
-                
-                if self.ip_pool:
- 
-                    self.scanned_ips = self.scanned_ips + 1
-                    return self.ip_pool.pop(0)
-            return None                   
+                    if not hasattr(self, "bfilter") or self.bfilter is None:
+                        if not self.ip_pool:
+                            block           = self.blocks.pop(0)
+                            network         = ipaddress.IPv4Network(block)
+                            self.bfilter    = BloomFilter(capacity=network.num_addresses * 2, error_rate=0.001)
+                            self.ip_pool    = [str(ip) for ip in network]
+                        
+                        if self.ip_pool:
+        
+                            self.scanned_ips = self.scanned_ips + 1
+                            return self.ip_pool.pop(0)
 
+
+                return None                   
+
+            except Exception as e:
+                return f"error: ip exception {e}"
     
     def _make_random_ip(self):
 
         try:
+            if self.bfilter_all is None:
+                self.bfilter_all = BloomFilter(capacity=self.bloomsize, error_rate=0.001)
 
             ip = f'{random.randint(1,254)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(0,254)}'
 
             with self.lock:
-                self.scanned_ips = self.scanned_ips + 1
-            
+                if ip in self.bfilter_all:
+                    return False
+                self.bfilter_all(ip)
+                self.scanned_ips = self.scanned_ips + 1               
+
+                if verbose:
+                    return f"[!] {ip} Generated"
+
             return ip
 
         except Exception as e:
@@ -178,11 +212,12 @@ class MassIPScanner:
     def status(self):
 
         return {
-            "Scanning"  : self.scanning,
-            "Scanned"   : self.scanned_ips,
-            "Online"    : self.online_ips,
-            "Errors"    : self.errors,
-            "Found"     : self.found
+            "Scanning"          : self.scanning,
+            "Scanned"           : self.scanned_ips,
+            "Online"            : self.online_ips,
+            "Offline"           : self.errors,
+            "Found"             : self.found,
+            "Scanned Blocks"    : self.blocks
             
         }
     

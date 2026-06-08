@@ -551,11 +551,12 @@ class Dashboard:
 
         # ── live scan view ────────────────────────────────────────────────────
         elif p and (p.scanning or p.scan_done):
-            scanned  = getattr(p, "scanned_ips", 0)
-            online   = getattr(p, "online_ips",  0)
-            errors   = getattr(p, "errors",      0)
-            threads  = getattr(p, "threads",      0)
+            scanned  = getattr(p, "scanned_ips",   0)
+            online   = getattr(p, "online_ips",    0)
+            errors   = getattr(p, "errors",        0)
+            threads  = getattr(p, "threads",       0)
             hit_rate = f"{(online / scanned * 100):.3f}%" if scanned > 0 else "0.000%"
+            blocks   = getattr(p, "scanned blocks",0)
 
             lines += [
                 f"  Scanned  : {scanned:,}",
@@ -563,6 +564,7 @@ class Dashboard:
                 f"  Hit Rate : {hit_rate}",
                 f"  Errors   : {errors:,}",
                 f"  Threads  : {threads}",
+                f"  Blocks   : {blocks}",
                 dash,
             ]
 
