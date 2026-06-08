@@ -16,6 +16,7 @@ from variables.nodeinfo.firewall    import FirewallLogParser
 from variables.nodeinfo.system_info import get_system_info
 from modes.netscan                  import net_scan_panel
 from modes.IDS                      import ids_panel
+from modes.ip_scan                  import mass_ip_scanner
 from variables.poisons.ARP          import arp_p, arp_poison
 from frontend.constants             import VERSION, RESET, rgb, rgb_bg
 
@@ -68,25 +69,35 @@ class Dashboard:
         self.death_star_mode        = False
         self.show_attack_details    = False
         self.operator_mode          = False
+
         self.netscan_mode           = False
         self.netscan_panel_open     = False
         self.ids_mode               = False
         self.arp_posion_mode        = False
         self.ids_panel_open         = False
+        self.ip_scan_mode           = False
+        self.ip_scan_panel_open     = False
+
         self.running                = True
         self.globe                  = None
+
         self.ids_panel_state        = 0
         self.arp_poison_panel_state = 0
+        self.ip_scan_state          = 0
 
-        # ARP input state — must be initialised here
-        self.arp_input_mode   = False
-        self.arp_input_buffer = ""
+        # ARP input state
+        self.arp_input_mode         = False
+        self.arp_input_buffer       = ""
+
+        # IP Scan input state
+        self.ip_input_mode          = False
+        self.ip_input_buffer        = ""
 
         # System info cache
-        self.sys_info_cache    = None
-        self.sys_info_os       = None
-        self.sys_info_last_upd = 0
-        self.sys_info_interval = 2.0
+        self.sys_info_cache         = None
+        self.sys_info_os            = None
+        self.sys_info_last_upd      = 0
+        self.sys_info_interval      = 2.0
 
         # Firewall parser
         self.log_parser    = FirewallLogParser(log_path)
@@ -103,15 +114,20 @@ class Dashboard:
         # Panel references
         self.netscan                          = net_scan_panel
         self.ids_panel                        = ids_panel
+        self.ip_scan_panel                    = mass_ip_scanner
         self.arp_poison_panel                 = arp_p
         self.arp_poison_mode                  = arp_poison
+
         self.ids_panel.stop_requested         = False
         self.ids_panel.scanning               = False
         self.ids_mode                         = False
+
         self.arp_poison_panel.active          = False
         self.arp_poison_panel.inactive        = False
         self.arp_poison_panel.input_ready     = False
         self.arp_poison_panel.selected_iface  = None
+
+        # MassIPScanner manages its own state via .scanning / .scan_done
 
 
     # ── Firewall log verification ─────────────────────────────────────────────
@@ -498,6 +514,99 @@ class Dashboard:
                 "threat": "Depends on activity"}
 
 
+    # ── IP scanner panel ──────────────────────────────────────────────────────
+
+    def render_ip_scan_panel(self, width, height):
+        screen = [[(" ", 0, False)] * width for _ in range(height)]
+        p      = self.ip_scan_panel
+        inner  = width - 4
+        pad_x  = 2
+
+        if p and p.scanning:
+            status = "SCANNING..."
+        elif p and p.scan_done:
+            status = "COMPLETE"
+        else:
+            status = "READY"
+
+        sep  = "═" * inner
+        dash = "─" * inner
+
+        lines = [
+            sep,
+            "IP SCANNER".center(inner),
+            sep,
+            f"  Status   : {status}",
+            dash,
+        ]
+
+        # ── thread count prompt ───────────────────────────────────────────────
+        if self.ip_input_mode == "ip_threads":
+            lines += [
+                "  Enter thread count (default 250):",
+                f"  > {self.ip_input_buffer}█",
+                "",
+                "  ENTER to start  |  ESC to cancel",
+            ]
+
+        # ── live scan view ────────────────────────────────────────────────────
+        elif p and (p.scanning or p.scan_done):
+            scanned  = getattr(p, "scanned_ips", 0)
+            online   = getattr(p, "online_ips",  0)
+            errors   = getattr(p, "errors",      0)
+            threads  = getattr(p, "threads",      0)
+            hit_rate = f"{(online / scanned * 100):.3f}%" if scanned > 0 else "0.000%"
+
+            lines += [
+                f"  Scanned  : {scanned:,}",
+                f"  Online   : {online:,}",
+                f"  Hit Rate : {hit_rate}",
+                f"  Errors   : {errors:,}",
+                f"  Threads  : {threads}",
+                dash,
+            ]
+
+            # live IP feed — fills all remaining rows
+            found       = getattr(p, "found", [])
+            header_rows = len(lines)
+            footer_rows = 3                              # dash + controls + sep
+            feed_rows   = max(1, height - header_rows - footer_rows)
+            visible     = found[-feed_rows:]
+
+            if visible:
+                for ip, port in visible:
+                    lines.append(f"  [+] {ip} ───> {port}"[:inner])
+            else:
+                dots = "." * (int(time.time() * 2) % 4)
+                lines.append(f"  Waiting for hits{dots}")
+
+        # ── idle ──────────────────────────────────────────────────────────────
+        else:
+            lines += [
+                "  Press [M] again to start scan" if p
+                else "  IP Scan module not configured correctly"
+            ]
+
+        lines += [
+            dash,
+            "  [M] New scan   [X] Close   [Q] Quit",
+            sep,
+        ]
+
+        start_y = max(0, (height - len(lines)) // 2)
+        for i, line in enumerate(lines):
+            y = start_y + i
+            if y >= height:
+                break
+            self._write_line(screen, y, pad_x, line[:inner], width)
+
+        return screen
+
+    def _write_line(self, screen, y, x0, text, width):
+        for j, ch in enumerate(text):
+            if x0 + j < width:
+                screen[y][x0 + j] = (ch, 0, False)
+
     # ── Main render ───────────────────────────────────────────────────────────
 
     def render(self):
@@ -529,6 +638,9 @@ class Dashboard:
         elif self.arp_posion_mode:
             globe_screen = self.render_arp_poison_panel(globe_w, globe_h)
             title        = "ARP Cache Poison"
+        elif self.ip_scan_mode:
+            globe_screen = self.render_ip_scan_panel(globe_w, globe_h)
+            title        = " IP Scanner "
         else:
             self.globe.lighting  = self.lighting
             self.globe.plus_mode = self.plus_mode
@@ -692,12 +804,10 @@ class Dashboard:
                    (" " * max(0, pad_w)) + self.term.bright_black(ver_txt))
 
         # ── Legend bar ────────────────────────────────────────────────────────
-        # Drawn one row above the bottom border (globe_h - 1) so it sits
-        # inside the box and is never overwritten by the border draw above.
         legend_y = globe_h - 1
         if self.show_legend:
             legend = ("[Space]Pause [A]Details [C]Legend [D]DeathStar [I]IDS [L]Light "
-                      "[P]Plus [S]NetScan [T]Theme [O]Operator [X]Poison [Q]Quit")
+                      "[M]IPScan [P]Plus [S]NetScan [T]Theme [O]Operator [X]Poison [Q]Quit")
             out.append(self.term.move(legend_y, 1) +
                        self.term.bright_yellow(legend[:globe_w - 2].center(globe_w - 2)))
         else:
@@ -770,7 +880,7 @@ class Dashboard:
 
                 k = key.lower()
 
-                # ── ARP input intercept — must be first, swallows all keys ───
+                # ── ARP input intercept ───────────────────────────────────────
                 if self.arp_input_mode:
                     if key.code == self.term.KEY_ENTER:
                         raw    = self.arp_input_buffer.strip()
@@ -786,7 +896,25 @@ class Dashboard:
                         self.arp_input_buffer = self.arp_input_buffer[:-1]
                     elif not key.is_sequence:
                         self.arp_input_buffer += str(key)
-                    continue  # swallow — do not fall through to other handlers
+                    continue
+
+                # ── IP scan thread-count input intercept ──────────────────────
+                if self.ip_input_mode == "ip_threads":
+                    if key.code == self.term.KEY_ENTER:
+                        raw     = self.ip_input_buffer.strip()
+                        threads = int(raw) if raw.isdigit() and int(raw) > 0 else 250
+                        self.ip_input_mode   = False
+                        self.ip_input_buffer = ""
+                        self.ip_scan_panel.start(threads=threads)
+                    elif key.code == self.term.KEY_ESCAPE:
+                        self.ip_input_mode   = False
+                        self.ip_input_buffer = ""
+                        self.ip_scan_state   = 1   # back to open-but-idle
+                    elif key.code == self.term.KEY_BACKSPACE:
+                        self.ip_input_buffer = self.ip_input_buffer[:-1]
+                    elif not key.is_sequence:
+                        self.ip_input_buffer += str(key)
+                    continue
 
                 # ── Normal key handling ───────────────────────────────────────
                 if k in ("q",) or key.code == self.term.KEY_ESCAPE:
@@ -866,7 +994,7 @@ class Dashboard:
                         self.arp_poison_panel.active         = False
                         self.arp_poison_panel.inactive       = False
                         self.arp_poison_panel.stop_requested = True
-                        self.arp_input_mode                  = False  # cancel if mid-entry
+                        self.arp_input_mode                  = False
 
                     elif self.arp_poison_panel_state == 3:  # close panel
                         self.arp_poison_panel_state          = 0
@@ -885,6 +1013,27 @@ class Dashboard:
                                 self.netscan.results.clear()
                             self.netscan.scan_done = False
                         self.netscan.start_scan()
+
+                elif k == "m":
+                    if self.ip_scan_state == 0:             # open panel
+                        self.ip_scan_state                   = 1
+                        self.ip_scan_mode                    = True
+                        self.ids_mode = self.netscan_mode = self.operator_mode = False
+
+                    elif self.ip_scan_state == 1:           # prompt thread count, then scan
+                        self.ip_scan_state                   = 2
+                        self.ip_input_mode                   = "ip_threads"
+                        self.ip_input_buffer                 = ""
+
+                    elif self.ip_scan_state == 2:           # stop scan
+                        self.ip_scan_state                   = 3
+                        self.ip_scan_panel.scanning          = False   # signal worker threads to exit
+                        self.ip_input_mode                   = False   # cancel prompt if still open
+
+                    elif self.ip_scan_state == 3:           # close panel
+                        self.ip_scan_state                   = 0
+                        self.ip_scan_mode                    = False
+                        self.ip_scan_panel.scan_done         = False   # reset for next run
 
 
     # ── Main run loop ─────────────────────────────────────────────────────────
