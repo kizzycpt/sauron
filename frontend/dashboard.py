@@ -562,7 +562,7 @@ class Dashboard:
                 f"  Scanned  : {scanned:,}",
                 f"  Online   : {online:,}",
                 f"  Hit Rate : {hit_rate}",
-                f"  Errors   : {errors:,}",
+                f"  Offline  : {errors:,}",
                 f"  Threads  : {threads}",
                 f"  Blocks   : {blocks}",
                 dash,

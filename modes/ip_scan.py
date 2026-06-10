@@ -4,29 +4,43 @@ from threading              import Thread, Lock
 from concurrent.futures     import ThreadPoolExecutor
 from datetime               import datetime
 from pathlib                import Path
-from pybloom_live                import BloomFilter
+from pybloom_live           import BloomFilter
 
 base_dir = Path(__file__).resolve().parent
+
 class SaveIps:
 
+    LOG_DIR = base_dir / "IP Scans"
+    TS_FMT  = "%Y_%B_%d_%H_%M%p"
+
     def __init__(self):
-        self.time_stamp = datetime.now().strftime("%Y_%B_%d_%H_%M%p")
-        self.log_path   = base_dir / "IP Scans" / f"{self.time_stamp}.json"
+        timestamp     = datetime.now().strftime(self.TS_FMT)
+        self.log_path = self.LOG_DIR / f"{timestamp}.csv"
 
-
-    def save(self, found: list):
+    def save(self, found: list[tuple[str, int]]) -> bool:
+        if not found:
+            print("[!] Nothing to save.")
+            return False
         try:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
-            data = [{"ip": ip, "port": port} for ip, port in found]
+            with self.log_path.open("w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["IP Address", "Port", "Scanned At"])
+                writer.writerows([
+                    (ip, port, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    for ip, port in found
+                ])
 
-            self.log_path.write_text(json.dumps(data, indent=4))
+            print(f"[+] Saved {len(found)} results → {self.log_path}")
+            return True
 
-            print(f"[+] Saved {len(data)} results → {self.log_path}")
-
-        except Exception as e:
+        except PermissionError:
+            print(f"[!] Permission denied: {self.log_path}")
+        except OSError as e:
             print(f"[!] Save error: {e}")
 
+        return False
 
 class MassIPScanner:
 
@@ -59,7 +73,7 @@ class MassIPScanner:
         self.blocks         = []
         self.ip_pool        = []
         self.lock           = Lock()
-
+        verbose             = False
 
         self.country        = False
         self.asn            = False
@@ -77,59 +91,61 @@ class MassIPScanner:
 
 
     def _track_ip_blocks(self):
-
-        with self.lock: 
-            try:
-                while self.blocks or self.ip_pool:
-
-                    if not hasattr(self, "bfilter") or self.bfilter is None:
-                        if not self.ip_pool:
-                            block           = self.blocks.pop(0)
-                            network         = ipaddress.IPv4Network(block)
-                            self.bfilter    = BloomFilter(capacity=network.num_addresses * 2, error_rate=0.001)
-                            self.ip_pool    = [str(ip) for ip in network]
-                        
-                        if self.ip_pool:
         
-                            self.scanned_ips = self.scanned_ips + 1
-                            return self.ip_pool.pop(0)
+        try:
+                # Do non-shared work outside the lock
+            with self.lock:
+                if not self.ip_pool:
+                    if not self.blocks:
+                        return None
+                    block        = self.blocks.pop(0)
+                    network      = ipaddress.IPv4Network(block)
+                    self.ip_pool = [str(ip) for ip in network]
+                
+                # Only increment and pop need the lock
+                self.scanned_ips += 1
+                return self.ip_pool.pop(0)
 
 
                 return None                   
 
-            except Exception as e:
-                return f"error: ip exception {e}"
+        except Exception as e:
+            return f"error: ip exception {e}"
     
-    def _make_random_ip(self):
 
+
+    def _make_random_ip(self):
         try:
             if self.bfilter_all is None:
                 self.bfilter_all = BloomFilter(capacity=self.bloomsize, error_rate=0.001)
 
-            ip = f'{random.randint(1,254)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(0,254)}'
+            while True:
+                ip = f'{random.randint(1,254)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(0,254)}'
 
-            with self.lock:
-                if ip in self.bfilter_all:
-                    return False
-                self.bfilter_all(ip)
-                self.scanned_ips = self.scanned_ips + 1               
+                with self.lock:
+                    if ip in self.bfilter_all:
+                        continue                  # already seen, try again
+                    self.bfilter_all.add(ip)      # .add() not ()
+                    self.scanned_ips += 1
 
-                if verbose:
-                    return f"[!] {ip} Generated"
+                return ip
 
-            return ip
+        except Exception as e:
+            return f"Exception Error: {e}"
 
         except Exception as e:
 
             return f"Exception Error: {e}"
     
             
+
     def _get_ip(self):
 
         if self.country:
             return self._track_ip_blocks()
         
         return self._make_random_ip()
+
 
 
     def _validate_ip(self, ip):
@@ -153,6 +169,7 @@ class MassIPScanner:
                     self.errors = self.errors + 1
 
 
+
     def _ip_threadder(self):
         while self.scanning:
             ip = self._get_ip()
@@ -162,6 +179,8 @@ class MassIPScanner:
                 break
             self._validate_ip(ip)
     
+
+
     def run(self, ports=None, threads=None, blocks=None):
 
         self.scanning       = True
@@ -215,10 +234,9 @@ class MassIPScanner:
             "Scanning"          : self.scanning,
             "Scanned"           : self.scanned_ips,
             "Online"            : self.online_ips,
-            "Offline"           : self.errors,
+            "Errors "           : self.errors,
             "Found"             : self.found,
-            "Scanned Blocks"    : self.blocks
-            
+            "Scanned Blocks"    : self.blocks   
         }
     
 
