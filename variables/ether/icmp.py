@@ -5,10 +5,11 @@ import subprocess
 class ICMP:
 
     def ping(self, ip: str) -> bool:
+
         try:
             flag = "-n" if sys.platform == "win32" else "-c"
             r = subprocess.run(
-                ["ping", "a", flag, "1", "-W", "1", ip],
+                ["ping", flag, "1", "-W", "1", ip],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=2,
