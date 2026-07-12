@@ -567,7 +567,7 @@ class Dashboard:
                 f"  Blocks   : {blocks}",
                 dash,
             ]
-
+            
             # live IP feed — fills all remaining rows
             found       = getattr(p, "found", [])
             header_rows = len(lines)

@@ -22,7 +22,9 @@ full-screen TUI.
 - **Live Firewall Feed** — tails UFW/iptables/journalctl and parses blocked connections
 - **IP Intelligence** — geolocation + threat classification (CLOUD / HOSTING / ISP / SAFE)
 - **IDS Mode** — ARP-based intrusion detection, baseline comparison, and alert logging
-- **Net Scan Panel** — local subnet scanner with hostname, port, and OS detection
+- **Network Scanner** — local subnet scanner with hostname, port, and OS detection
+- **Mass IP Scanner** — generates random ip addresses per block and attempts tcp connections for open ports
+- **ARP Man in the Middle attack simulation** — local MitM attack that presents layer 4 traffic between targeted host and router
 - **Operator Mode** — detailed stats: top IPs, top ports, protocol breakdown, scan attempts
 - **Attack Detail Overlay** — deep-dive on the latest blocked connection
 - **7 Themes** — Matrix, Amber, Nord, Dracula, Mono, Rainbow, Skittles
@@ -79,9 +81,9 @@ python3 evileye.py
 ### Options
 
 ```bash
-python3 evileye.py --theme matrix       # Set startup theme
-python3 evileye.py --rotation 30        # Globe rotation speed in seconds
-python3 evileye.py --log-path /var/log/ufw.log  # Custom firewall log path
+python3 sauron.py --theme matrix       # Set startup theme
+python3 sauron.py --rotation 30        # Globe rotation speed in seconds
+python3 sauron.py --log-path /var/log/ufw.log  # Custom firewall log path
 ```
 
 ---
@@ -159,55 +161,90 @@ All data is saved automatically under `logs/`:
 ## Project Structure
 
 ```
-evileye/
-├── evileye.py                   # Dashboard entry point
-├── config.py                    # Configuration
+sauron/
+├── sauron.py               # Dashboard entry point
+├── config.py                # Configuration
 ├── requirements.txt
 ├── README.md
 ├── .gitignore
-├── venv/                        # Virtual environment
+├── evileye.spec
+├── sauron.ico
+├── test.py
+├── venv/                    # Virtual environment
+│
 ├── modes/
-│   ├── IDS.py                   # Intrusion detection module
-│   └── netscan.py               # Network scanner module
+│   ├── IDS.py                # Intrusion detection module
+│   ├── netscan.py             # Network scanner module
+│   └── ip_scan.py             # Mass IP scanner module
+│
 ├── variables/
 │   ├── ether/
-│   │   ├── gateway.py           # Gateway detection
-│   │   ├── icmp.py              # Ping / ICMP utilities
-│   │   ├── L2.py                # ARP scanning
-│   │   ├── mac.py               # MAC address helpers
-│   │   └── ports.py             # Port scanner
+│   │   ├── gateway.py          # Gateway detection
+│   │   ├── icmp.py             # Ping / ICMP utilities
+│   │   ├── L2.py               # ARP scanning
+│   │   ├── mac.py              # MAC address helpers
+│   │   └── ports.py            # Port scanner
+│   │
 │   ├── nodeinfo/
-│   │   ├── hostname.py          # Hostname resolution
-│   │   └── os.py                # OS fingerprinting
+│   │   ├── firewall.py         # Firewall detection
+│   │   ├── hostname.py         # Hostname resolution
+│   │   ├── ip_intel.py         # IP intelligence lookups
+│   │   ├── os.py                # OS fingerprinting
+│   │   └── system_info.py      # System info gathering
+│   │
+│   ├── poisons/
+│   │   ├── ARP.py              # ARP spoofing
+│   │   ├── DNS.py              # DNS spoofing
+│   │   ├── IP.py               # IP spoofing
+│   │   └── URL.py              # URL redirection/spoofing
+│   │
 │   ├── ui/
-│   │   └── banners.py           # ASCII banners
+│   │   └── banners.py          # ASCII banners
+│   │
 │   └── utils/
-│       ├── alerts.py            # Alert helpers
-│       ├── baseline.py          # Baseline read/write
-│       ├── inventory.py         # Device inventory
-│       └── signals.py           # SIGINT handler
-└── logs/                        # Auto-generated log output
-    ├── attacks_YYYY-MM-DD.csv
-    └── IDS/
-        ├── ids.log
-        └── runs/
-            └── YYYY-MM-DD_HH-MM-SS/
-                ├── devices.csv
-                └── report.md
-```
+│       ├── alerts.py           # Alert helpers
+│       ├── baseline.py         # Baseline read/write
+│       ├── inventory.py        # Device inventory
+│       └── signals.py          # SIGINT handler
+│
+├── logs/
+│   ├── attacks_YYYY-MM-DD.csv  # Auto-generated log output
+│   └── IDS/
+│       ├── ids.log
+│       └── runs/
+│           └── YYYY-MM-DD_HH-MM-SS/
+│               ├── devices.csv
+│               └── report.md
+│
+└── frontend/
+    ├── animations.py
+    ├── constants.py
+    ├── dashboard.py
+    ├── globe.py
+    └── icons.py
 
----
+
 
 ## Threat Classification
 
-| Level | Meaning |
-|-------|---------|
-| `CLOUD` | AWS, GCP, Azure, DigitalOcean, Cloudflare, etc. |
-| `HOSTING` | VPS, dedicated servers, datacenters |
-| `ISP` | Residential / commercial ISP addresses |
-| `SAFE` | Known clean residential traffic |
-| `LOCAL` | Private network address |
-| `UNKNOWN` | Could not classify |
+|-----------------------------------------------------------|
+| Level     | Definition                                    |
+|-----------|-----------------------------------------------|
+| `CLOUD`   | AWS, GCP, Azure, DigitalOcean, Cloudflare, etc|
+|-----------------------------------------------------------|
+| `HOSTING` | VPS, dedicated servers, datacenters           |
+|-----------------------------------------------------------|
+| `ISP`     | Residential / commercial ISP addresses        |
+|-----------------------------------------------------------|
+| `SAFE`    | Known clean residential traffic               |
+|-----------------------------------------------------------|
+| `LOCAL`   | Private network address                       |
+|-----------------------------------------------------------|
+| `UNKNOWN` | Could not classify                            |
+|-----------------------------------------------------------|
+
+
+
 
 ---
 
@@ -224,7 +261,7 @@ sudo setcap cap_net_raw,cap_net_admin=eip /usr/bin/python3
 sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service,cap_dac_override+eip /usr/bin/nmap
 
 # Add a sauron alias (adjust path to match your install)
-echo "alias sauron='sudo /home/$USER/Documents/programs/evileye/venv/bin/python /home/$USER/Documents/programs/evileye/evileye.py'" >> ~/.bashrc
+echo "alias sauron='sudo /home/$USER/Documents/programs/sauron/venv/bin/python /home/$USER/Documents/programs/evileye/sauron.py'" >> ~/.bashrc
 source ~/.bashrc
 
 # Then launch with:
